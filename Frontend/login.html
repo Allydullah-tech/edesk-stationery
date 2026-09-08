@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In — eDESK Print &amp; Digital</title>
+<script src="js/manifest-init.js"></script>
+<link rel="icon" href="assets/icon-192.png">
+<meta name="theme-color" content="#101B30">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="assets/logo.png" alt="eDESK Stationery">
+      <div class="t1">eDESK Print &amp; Digital</div>
+      <div class="t2">Print &amp; Digital</div>
+    </div>
+    <div class="auth-title">Welcome back</div>
+    <p class="auth-sub">Log in to your business dashboard</p>
+
+    <div class="error-box" id="err"></div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="username" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary w-full" id="submitBtn">Log In</button>
+    </form>
+
+    <p class="auth-alt"><a href="forgot-password.html" class="gold">Forgot password?</a></p>
+    <p class="auth-alt"><a href="index.html">&larr; Back to homepage</a></p>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script>
+  const form = document.getElementById('loginForm');
+  const errBox = document.getElementById('err');
+  const submitBtn = document.getElementById('submitBtn');
+
+  // If already logged in, skip straight to dashboard
+  (async () => {
+    const res = await API._request(API.authBase + 'session_check.php', 'GET');
+    if (res.success) window.location.href = 'dashboard.html';
+  })();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errBox.classList.remove('show');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Logging in...';
+
+    const res = await API.auth('login.php', {
+      username: document.getElementById('username').value.trim(),
+      password: document.getElementById('password').value,
+    });
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Log In';
+
+    if (!res.success) {
+      errBox.textContent = res.message || 'Login failed.';
+      errBox.classList.add('show');
+      return;
+    }
+    window.location.href = 'dashboard.html';
+  });
+</script>
+</body>
+</html>

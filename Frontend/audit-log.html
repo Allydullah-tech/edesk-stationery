@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Log — eDESK Print &amp; Digital</title>
+    <script src="js/manifest-init.js"></script>
+    <link rel="icon" href="assets/icon-192.png">
+    <meta name="theme-color" content="#101B30">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <aside class="sidebar no-print">
+            <div class="brand"><img src="assets/logo.png" alt="eDESK">
+                <div>
+                    <div class="t1">eDESK</div>
+                    <div class="t2">Print &amp; Digital</div>
+                </div>
+            </div>
+            <div class="nav-group">
+                <div class="nav-label">Overview</div>
+                <a href="dashboard.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Operations</div>
+                <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
+                <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
+                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
+                <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Insights</div>
+                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
+                <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a></div>
+            <div class="nav-group admin-only">
+                <div class="nav-label">Administration</div>
+                <a href="users.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Manage Users</a>
+                <a href="audit-log.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#eye"></use></svg></span> Activity Log</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Account</div>
+                <a href="profile.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg></span> My Profile</a></div>
+            <div class="sidebar-footer"><a href="#" class="nav-link js-logout"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></span> Log Out</a></div>
+        </aside>
+
+        <div class="main">
+            <div class="topbar no-print">
+                <div class="flex gap-12" style="align-items:center;">
+                    <button class="btn btn-icon btn-outline js-menu-toggle"><svg class="ui-icon"><use href="assets/icons.svg#menu"></use></svg></button>
+                    <div>
+                        <div class="page-title">Activity Log</div>
+                        <div class="page-sub">Who created, edited, or deleted what, and when</div>
+                    </div>
+                </div>
+                <div class="flex gap-8" style="align-items:center;">
+                    <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadAuditExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
+                    <div class="user-chip">
+                        <div class="avatar js-user-avatar">--</div>
+                        <div>
+                            <div class="name js-user-name">—</div>
+                            <div class="role js-user-role">—</div>
+                        </div>
+                    </div>
+                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <div class="print-header">
+                    <img src="assets/logo.png" alt="eDESK Stationery">
+                    <div class="doc-brand-name">eDESK</div>
+                    <div class="doc-brand-tagline">Print &amp; Digital</div>
+                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
+                    <h2>Activity Log Report</h2>
+                    <div class="meta" id="print-date-audit"></div>
+                </div>
+
+                <div class="card">
+                    <div class="filter-bar no-print" style="margin-bottom:14px;flex-wrap:wrap;">
+                        <div class="field" style="margin:0;flex:1;min-width:200px;">
+                            <label>Search Activity</label>
+                            <input type="text" id="searchInput" placeholder="Search by action, user, module, or keyword...">
+                        </div>
+                        <div class="field" style="margin:0;width:170px;">
+                            <label>Activity Type</label>
+                            <select id="typeFilter">
+              <option value="">All Activities</option>
+              <option value="login:login">Login</option>
+              <option value="sale:create">Sale Added</option>
+              <option value="sale:update">Sale Edited</option>
+              <option value="sale:delete">Sale Deleted</option>
+              <option value="product:create">Product Added</option>
+              <option value="product:update">Product Edited</option>
+              <option value="product:delete">Product Deleted</option>
+              <option value="service:create">Service Added</option>
+              <option value="service:update">Service Edited</option>
+              <option value="service:delete">Service Deleted</option>
+              <option value="purchase:create">Purchase Added</option>
+              <option value="expense:create">Expense Added</option>
+              <option value="expense:update">Expense Edited</option>
+              <option value="expense:delete">Expense Deleted</option>
+              <option value="damage:create">Damage Added</option>
+              <option value="damage:update">Damage Edited</option>
+              <option value="damage:delete">Damage Deleted</option>
+              <option value="debt_payment:payment">Debt Payment Recorded</option>
+              <option value="user:create">User Account Created</option>
+              <option value="user:update">User Account Edited</option>
+              <option value="user:delete">User Account Deleted</option>
+            </select>
+                        </div>
+                        <div class="field" style="margin:0;width:140px;">
+                            <label>User</label>
+                            <select id="userFilter"><option value="">All Users</option></select>
+                        </div>
+                        <div class="field" style="margin:0;"><label>From</label><input type="date" id="fStart"></div>
+                        <div class="field" style="margin:0;"><label>To</label><input type="date" id="fEnd"></div>
+                        <button class="btn btn-primary btn-sm" onclick="loadAuditLog()">Filter</button>
+                        <button class="btn btn-outline btn-sm" onclick="resetFilter()">Clear / This Month</button>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date &amp; Time</th>
+                                    <th>User</th>
+                                    <th class="no-print">Role</th>
+                                    <th>Action</th>
+                                    <th>Area</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditBody">
+                                <tr>
+                                    <td colspan="6" class="muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/guard.js"></script>
+    <script src="js/audit-log.js"></script>
+</body>
+
+</html>

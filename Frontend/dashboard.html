@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — eDESK Print &amp; Digital</title>
+    <script src="js/manifest-init.js"></script>
+    <link rel="icon" href="assets/icon-192.png">
+    <meta name="theme-color" content="#101B30">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <aside class="sidebar no-print">
+            <div class="brand">
+                <img src="assets/logo.png" alt="eDESK">
+                <div>
+                    <div class="t1">eDESK</div>
+                    <div class="t2">Print &amp; Digital</div>
+                </div>
+            </div>
+            <div class="nav-group">
+                <div class="nav-label">Overview</div>
+                <a href="dashboard.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a>
+            </div>
+            <div class="nav-group">
+                <div class="nav-label">Operations</div>
+                <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
+                <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
+                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
+                <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a>
+            </div>
+            <div class="nav-group">
+                <div class="nav-label">Insights</div>
+                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
+                <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a>
+            </div>
+            <div class="nav-group admin-only">
+                <div class="nav-label">Administration</div>
+                <a href="users.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Manage Users</a>
+                <a href="audit-log.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#eye"></use></svg></span> Activity Log</a>
+            </div>
+            <div class="nav-group">
+                <div class="nav-label">Account</div>
+                <a href="profile.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg></span> My Profile</a>
+            </div>
+            <div class="sidebar-footer">
+                <a href="#" class="nav-link js-logout"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></span> Log Out</a>
+            </div>
+        </aside>
+
+        <div class="main">
+            <div class="topbar no-print">
+                <div class="flex gap-12" style="align-items:center;">
+                    <button class="btn btn-icon btn-outline js-menu-toggle" id="menuBtn"><svg class="ui-icon"><use href="assets/icons.svg#menu"></use></svg></button>
+                    <div>
+                        <div class="page-title">Dashboard</div>
+                        <div class="page-sub" id="today-label">Today's overview</div>
+                    </div>
+                </div>
+                <div class="flex gap-8" style="align-items:center;">
+                    <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadDashboardExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
+                    <div class="user-chip">
+                        <div class="avatar js-user-avatar">--</div>
+                        <div>
+                            <div class="name js-user-name">—</div>
+                            <div class="role js-user-role">—</div>
+                        </div>
+                    </div>
+                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
+                </div>
+            </div>
+
+            <div class="main-content">
+
+                <div class="print-header" id="dashboardPrintHeader">
+                    <img src="assets/logo.png" alt="eDESK Stationery">
+                    <div class="doc-brand-name">eDESK</div>
+                    <div class="doc-brand-tagline">Print &amp; Digital</div>
+                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
+                    <h2>Dashboard Report</h2>
+                    <div class="meta" id="print-date-dashboard"></div>
+                </div>
+
+                <div class="print-header" id="lowStockPrintHeader">
+                    <img src="assets/logo.png" alt="eDESK Stationery">
+                    <div class="doc-brand-name">eDESK</div>
+                    <div class="doc-brand-tagline">Print &amp; Digital</div>
+                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
+                    <h2>Low Stock Alert</h2>
+                    <div class="meta" id="print-date-lowstock"></div>
+                </div>
+
+                <div id="debtAlertBanner" class="no-print-lowstock"></div>
+                <div id="lowStockBanner" class="no-print-lowstock"></div>
+
+                <div id="todaySection" class="no-print-lowstock">
+                    <div class="card-title mt-16 no-print">Today at a Glance</div>
+                    <div class="stat-grid no-print">
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg></div>
+                            <div class="label">Sales Today</div>
+                            <div class="value" id="d-sales">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></div>
+                            <div class="label">Transactions</div>
+                            <div class="value" id="d-transactions">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></div>
+                            <div class="label">Expenses Today</div>
+                            <div class="value" id="d-expenses">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></div>
+                            <div class="label">Damage Loss</div>
+                            <div class="value red" id="d-damage">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#trending-up"></use></svg></div>
+                            <div class="label">Profit Today</div>
+                            <div class="value green" id="d-profit">—</div>
+                        </div>
+                        <a href="debts.html" style="text-decoration:none;color:inherit;">
+                            <div class="stat-card">
+                                <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#credit-card"></use></svg></div>
+                                <div class="label">On Credit Today</div>
+                                <div class="value gold" id="d-credit">—</div>
+                                <div class="sub" id="d-credit-sub"></div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="print-only report-summary-text">
+                        <p style="font-weight:800;margin-top:10px;">Today at a Glance</p>
+                        <p>Sales Today = <strong id="d-sales-print">TZS 0</strong></p>
+                        <p>Transactions = <strong id="d-transactions-print">0</strong></p>
+                        <p>Expenses Today = <strong id="d-expenses-print">TZS 0</strong></p>
+                        <p>Damage Loss = <strong id="d-damage-print">TZS 0</strong></p>
+                        <p>Profit Today = <strong id="d-profit-print">TZS 0</strong></p>
+                        <p>On Credit Today = <strong id="d-credit-print">TZS 0</strong></p>
+                    </div>
+                </div>
+
+                <div id="stockSection" class="no-print-lowstock">
+                    <div class="card-title mt-24 no-print">Stock Summary</div>
+                    <div class="stat-grid no-print">
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></div>
+                            <div class="label">Total Products</div>
+                            <div class="value" id="d-products">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></div>
+                            <div class="label">Total Services</div>
+                            <div class="value" id="d-services">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#calendar"></use></svg></div>
+                            <div class="label">Sales This Month</div>
+                            <div class="value gold" id="d-month-sales">—</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></div>
+                            <div class="label">Net Profit (Month)</div>
+                            <div class="value green" id="d-month-profit">—</div>
+                        </div>
+                    </div>
+                    <div class="print-only report-summary-text">
+                        <p style="font-weight:800;margin-top:10px;">Stock Summary</p>
+                        <p>Total Products = <strong id="d-products-print">0</strong></p>
+                        <p>Total Services = <strong id="d-services-print">0</strong></p>
+                        <p>Sales This Month = <strong id="d-month-sales-print">TZS 0</strong></p>
+                        <p>Net Profit (Month) = <strong id="d-month-profit-print">TZS 0</strong></p>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid mt-24">
+                    <div class="card no-print-lowstock" id="topSellingCard">
+                        <div class="card-title">Top Selling Today</div>
+                        <div class="table-wrap" style="border:none;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Qty</th>
+                                        <th>Revenue</th>
+                                        <th>Profit</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="topSellingBody">
+                                    <tr>
+                                        <td colspan="4" class="muted">No sales recorded yet today.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card" id="lowStockCard">
+                        <div class="flex-between">
+                            <div class="card-title" style="margin:0;">Low Stock Alerts</div>
+                            <button class="btn btn-outline btn-sm no-print" onclick="openDownloadMenu(this, downloadLowStock, downloadLowStockExcel)">
+              <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download
+            </button>
+                        </div>
+                        <div id="lowStockList" class="mt-8 no-print">
+                            <p class="muted" style="font-size:12.5px;">All stock levels look healthy.</p>
+                        </div>
+                        <div id="lowStockPrintTable" class="print-only mt-8"></div>
+                    </div>
+                </div>
+
+                <div class="print-only doc-signature">
+                    <div class="sig-block">
+                        <div class="sig-role">Prepared By</div>
+                        <div class="sig-field"><span class="sig-field-label">Name</span><span class="sig-field-fill">&nbsp;</span></div>
+                        <div class="sig-field"><span class="sig-field-label">Signature</span><span class="sig-field-fill">&nbsp;</span></div>
+                    </div>
+                    <div class="sig-block">
+                        <div class="sig-role">Approved By</div>
+                        <div class="sig-field"><span class="sig-field-label">Name</span><span class="sig-field-fill">&nbsp;</span></div>
+                        <div class="sig-field"><span class="sig-field-label">Signature</span><span class="sig-field-fill">&nbsp;</span></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/guard.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+
+</html>

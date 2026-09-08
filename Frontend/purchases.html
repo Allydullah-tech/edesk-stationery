@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchases — eDESK Print &amp; Digital</title>
+    <script src="js/manifest-init.js"></script>
+    <link rel="icon" href="assets/icon-192.png">
+    <meta name="theme-color" content="#101B30">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <aside class="sidebar no-print">
+            <div class="brand">
+                <img src="assets/logo.png" alt="eDESK">
+                <div>
+                    <div class="t1">eDESK</div>
+                    <div class="t2">Print &amp; Digital</div>
+                </div>
+            </div>
+            <div class="nav-group">
+                <div class="nav-label">Overview</div>
+                <a href="dashboard.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Operations</div>
+                <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
+                <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
+                <a href="purchases.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
+                <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Insights</div>
+                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
+                <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a></div>
+            <div class="nav-group admin-only">
+                <div class="nav-label">Administration</div>
+                <a href="users.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Manage Users</a>
+                <a href="audit-log.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#eye"></use></svg></span> Activity Log</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Account</div>
+                <a href="profile.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg></span> My Profile</a></div>
+            <div class="sidebar-footer"><a href="#" class="nav-link js-logout"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></span> Log Out</a></div>
+        </aside>
+
+        <div class="main">
+            <div class="topbar no-print">
+                <div class="flex gap-12" style="align-items:center;">
+                    <button class="btn btn-icon btn-outline js-menu-toggle">
+          <svg class="ui-icon"><use href="assets/icons.svg#menu"></use></svg>
+        </button>
+                    <div>
+                        <div class="page-title">Purchases</div>
+
+                    </div>
+                </div>
+                <div class="flex gap-8" style="align-items:center;">
+                    <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadPurchasesExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
+                    <div class="user-chip">
+                        <div class="avatar js-user-avatar">--</div>
+                        <div>
+                            <div class="name js-user-name">—</div>
+                            <div class="role js-user-role">—</div>
+                        </div>
+                    </div>
+                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
+                </div>
+            </div>
+
+            <div class="main-content">
+
+                <p class="muted worker-note" id="workerPurchaseNote" style="font-size:12px;">
+                    You can view purchase history below. Only admins can add new purchases or import a supplier file.
+                </p>
+
+                <div class="admin-only no-print">
+                    <div class="flex gap-8" style="margin-bottom:16px;">
+                        <button type="button" class="btn btn-sm w-full" id="modeSingleBtn" onclick="setPurchaseMode('single')">Add Single Product</button>
+                        <button type="button" class="btn btn-sm w-full" id="modeImportBtn" onclick="setPurchaseMode('import')">Import from Excel / CSV</button>
+                    </div>
+
+                    <!-- ===================== MODE 1: Single product ===================== -->
+                    <div class="card" id="singleModeCard">
+                        <div class="card-title">Add a Purchased Product</div>
+                        <p class="help-text mt-8" style="margin-bottom:12px;">
+                            If the product name already exists in Stock, its quantity will simply be topped up. If it's new, it will be created automatically.
+                        </p>
+
+                        <form id="singleForm">
+                            <div class="field autocomplete">
+                                <label>Product Name</label>
+                                <input type="text" id="sp-name" placeholder="Type an existing product name, or a new one..." autocomplete="off" required>
+                                <div id="sp-suggestions" class="autocomplete-list hidden"></div>
+                                <p class="help-text" id="sp-match-hint"></p>
+                            </div>
+
+                            <div class="field-row">
+                                <div class="field">
+                                    <label>Unit</label>
+                                    <input type="text" id="sp-unit" value="pcs">
+                                </div>
+                                <div class="field">
+                                    <label>Quantity Received</label>
+                                    <input type="number" id="sp-qty" min="1" step="1" required>
+                                </div>
+                            </div>
+
+                            <div class="field-row">
+                                <div class="field">
+                                    <label id="sp-buying-label">Buying Price (TZS)</label>
+                                    <input type="number" id="sp-buying" min="0" step="0.01">
+                                    <p class="help-text" id="sp-buying-hint">Required for a new product. Leave blank on an existing product to keep its current price.</p>
+                                </div>
+                                <div class="field">
+                                    <label id="sp-selling-label">Selling Price (TZS)</label>
+                                    <input type="number" id="sp-selling" min="0" step="0.01">
+                                    <p class="help-text" id="sp-selling-hint">Required for a new product. Leave blank on an existing product to keep its current price.</p>
+                                </div>
+                            </div>
+
+                            <div class="field" id="sp-category-field">
+                                <label>Category (only used for new products)</label>
+                                <input type="text" id="sp-category" placeholder="e.g. Paper, Printing">
+                            </div>
+
+                            <div class="field">
+                                <label>Purchase Date</label>
+                                <input type="date" id="sp-date">
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-full mt-8">Save Purchase &amp; Update Stock</button>
+                        </form>
+                    </div>
+
+                    <!-- ===================== MODE 2: Excel / CSV import ===================== -->
+                    <div class="card hidden" id="importModeCard">
+                        <div class="card-title">Import Products from a File</div>
+                        <p class="help-text mt-8" style="margin-bottom:12px;">
+                            Upload the Excel (.xlsx) or CSV file your supplier sent you. We'll try to match columns like
+                            <strong>Product / Name</strong>, <strong>Quantity</strong>, <strong>Buying Price</strong> and <strong>Selling Price</strong> automatically. You'll get a chance to review and fix anything before it's saved.
+                        </p>
+
+                        <div class="field">
+                            <label>Choose File</label>
+                            <input type="file" id="importFile" accept=".xlsx,.xls,.csv">
+                        </div>
+
+                        <div id="importStatus"></div>
+
+                        <div id="importPreviewWrap" class="hidden mt-16">
+                            <div class="flex-between" style="margin-bottom:10px;">
+                                <div class="card-title" style="margin:0;">Review Before Saving</div>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="addBlankImportRow()">+ Add Row</button>
+                            </div>
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th style="min-width:170px;">Product Name</th>
+                                            <th style="min-width:80px;">Unit</th>
+                                            <th style="min-width:90px;">Quantity</th>
+                                            <th style="min-width:110px;">Buying Price</th>
+                                            <th style="min-width:110px;">Selling Price</th>
+                                            <th style="min-width:120px;">Category</th>
+                                            <th>Status</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="importPreviewBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="field mt-16" style="max-width:260px;">
+                                <label>Purchase Date</label>
+                                <input type="date" id="importDate">
+                            </div>
+                            <p class="row-error" id="importValidationMsg"></p>
+                            <button type="button" class="btn btn-primary w-full mt-8" id="confirmImportBtn" onclick="confirmImport()">Confirm &amp; Save All to Stock</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================== Recent purchases ===================== -->
+                <div class="print-header">
+                    <img src="assets/logo.png" alt="eDESK">
+                    <div class="doc-brand-name">eDESK</div>
+                    <div class="doc-brand-tagline">Print &amp; Digital</div>
+                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
+                    <h2 id="purchasesReportTitle">Purchases Report</h2>
+                    <div class="meta" id="print-date-purchases"></div>
+                </div>
+
+                <div class="card mt-24">
+                    <div class="flex-between no-print" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                        <div class="card-title" style="margin:0;">Recent Purchases</div>
+                        <div class="filter-bar" style="margin:0;">
+                            <div class="field" style="margin:0;width:130px;">
+                                <label>Period</label>
+                                <select id="periodSelect" onchange="onPurchasePeriodChange()">
+              <option value="">All Time</option>
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="year">Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+                            </div>
+                            <div class="field hidden" style="margin:0;" id="purchaseDateField">
+                                <label id="purchaseDateLabel">Date</label>
+                                <input type="date" id="purchaseDateInput" onchange="loadRecentPurchases()">
+                            </div>
+                            <div class="field hidden" style="margin:0;" id="purchaseEndField">
+                                <label>End Date</label>
+                                <input type="date" id="purchaseEndInput" onchange="loadRecentPurchases()">
+                            </div>
+                            <div class="field" style="margin:0;width:200px;">
+                                <select id="sourceFilter" onchange="loadRecentPurchases()">
+              <option value="">All Sources</option>
+              <option value="manual">Manual Entry Only</option>
+              <option value="import">Excel Import Only</option>
+            </select>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="help-text no-print" id="purchaseWeekHint" style="margin:-4px 0 12px;">Tip: for "Week", pick the starting date — the system automatically counts the next 7 days.</p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Product</th>
+                                    <th>Unit</th>
+                                    <th>Quantity</th>
+                                    <th>Buying Price</th>
+                                    <th>Total Cost</th>
+                                    <th>Source</th>
+                                    <th>Recorded By</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentPurchasesBody">
+                                <tr>
+                                    <td colspan="8" class="muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="report-totals-row">
+                        <div class="rt-item">Total Products Purchased<strong id="pu-total-types">0</strong></div>
+                        <div class="rt-item">Total Items Purchased<strong id="pu-total-units">0</strong></div>
+                        <div class="rt-item">Overall Total Cost<strong id="pu-total-cost">TZS 0</strong></div>
+                    </div>
+                </div>
+
+                <div class="print-only doc-signature">
+                    <div class="sig-block">
+                        <div class="sig-role">Prepared By</div>
+                        <div class="sig-field"><span class="sig-field-label">Name</span><span class="sig-field-fill">&nbsp;</span></div>
+                        <div class="sig-field"><span class="sig-field-label">Signature</span><span class="sig-field-fill">&nbsp;</span></div>
+                    </div>
+                    <div class="sig-block">
+                        <div class="sig-role">Approved By</div>
+                        <div class="sig-field"><span class="sig-field-label">Name</span><span class="sig-field-fill">&nbsp;</span></div>
+                        <div class="sig-field"><span class="sig-field-label">Signature</span><span class="sig-field-fill">&nbsp;</span></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick "Add to Product List" card - used both for single purchases and Excel import rows -->
+    <div class="modal-overlay" id="quickAddModal">
+        <div class="modal">
+            <div class="modal-head">
+                <h3>Add to Product List</h3>
+                <button class="modal-close" onclick="closeModal('quickAddModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
+            </div>
+            <div class="modal-body">
+                <p class="help-text" id="quickAddContext" style="margin-bottom:12px;"></p>
+                <form id="quickAddForm">
+                    <div class="field">
+                        <label>Product Name</label>
+                        <input type="text" id="qa-name" required>
+                    </div>
+                    <div class="field">
+                        <label>Category (optional)</label>
+                        <input type="text" id="qa-category" placeholder="e.g. Paper, Printing">
+                    </div>
+                    <div class="field">
+                        <label>Unit</label>
+                        <input type="text" id="qa-unit" value="pcs">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-full mt-8">Add to Product List &amp; Continue</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/guard.js"></script>
+    <script src="js/purchases.js"></script>
+</body>
+
+</html>
