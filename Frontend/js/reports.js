@@ -39,11 +39,46 @@ async function generateReport() {
   renderReport(res.data);
 }
 
+/**
+ * Renders one top_selling/most_profitable row, plus - if this product
+ * has types - one further indented sub-row per type right beneath it.
+ * The parent row's own numbers are always the combined total across
+ * every type (unchanged from before this feature), so both the overall
+ * and the type-level performance are visible together, e.g.:
+ *   Pen — Total     80    TZS ...    TZS ...
+ *     ↳ Obama Pen   50    TZS ...    TZS ...
+ *     ↳ Marker Pen  30    TZS ...    TZS ...
+ */
+function renderRankedRow(p, i, profitClass) {
+  const hasTypes = p.types && p.types.length > 0;
+  const mainRow = `<tr>
+      <td>${i + 1}</td>
+      <td>${hasTypes ? p.name + ' — Total' : p.name}</td>
+      <td>${p.is_service == 1 ? '<span class="tag tag-gold">Service</span>' : '<span class="tag tag-gray">Product</span>'}</td>
+      <td>${p.qty_sold}</td>
+      <td>${money(p.revenue)}</td>
+      <td class="${profitClass}">${money(p.profit)}</td>
+    </tr>`;
+
+  if (!hasTypes) return mainRow;
+
+  const subRows = p.types.map(t => `<tr class="muted">
+      <td></td>
+      <td style="padding-left:24px;">↳ ${t.variant_name}</td>
+      <td></td>
+      <td>${t.qty_sold}</td>
+      <td>${money(t.revenue)}</td>
+      <td>${money(t.profit)}</td>
+    </tr>`).join('');
+
+  return mainRow + subRows;
+}
+
 function renderReport(r) {
   const rangeText = (r.range.start === r.range.end) ? fmtDate(r.range.start) : (fmtDate(r.range.start) + '  —  ' + fmtDate(r.range.end));
   document.getElementById('reportRangeLabel').textContent = rangeText;
   document.getElementById('reportRangeLabelPrint').textContent = rangeText;
-  document.getElementById('reportGeneratedAt').textContent = 'Generated ' + new Date().toLocaleString('en-GB');
+  document.getElementById('reportGeneratedAt').textContent = new Date().toLocaleString('en-GB');
 
   document.getElementById('r-sales').textContent = money(r.sales.total_sales);
   document.getElementById('r-transactions').textContent = r.sales.transactions;
@@ -59,16 +94,14 @@ function renderReport(r) {
   document.getElementById('r-net-print').textContent = money(r.net_profit);
 
   const topBody = document.getElementById('topSellingTable');
-  topBody.innerHTML = r.top_selling.length ? r.top_selling.map((p, i) => `
-    <tr><td>${i + 1}</td><td>${p.name}</td><td>${p.is_service == 1 ? '<span class="tag tag-gold">Service</span>' : '<span class="tag tag-gray">Product</span>'}</td>
-    <td>${p.qty_sold}</td><td>${money(p.revenue)}</td><td class="gold">${money(p.profit)}</td></tr>`).join('')
+  topBody.innerHTML = r.top_selling.length
+    ? r.top_selling.map((p, i) => renderRankedRow(p, i, 'gold')).join('')
     : '<tr><td colspan="6" class="muted">No sales in this period.</td></tr>';
 
   const profitSorted = [...r.most_profitable];
   const profBody = document.getElementById('mostProfitableTable');
-  profBody.innerHTML = profitSorted.length ? profitSorted.map((p, i) => `
-    <tr><td>${i + 1}</td><td>${p.name}</td><td>${p.is_service == 1 ? '<span class="tag tag-gold">Service</span>' : '<span class="tag tag-gray">Product</span>'}</td>
-    <td>${p.qty_sold}</td><td>${money(p.revenue)}</td><td class="green">${money(p.profit)}</td></tr>`).join('')
+  profBody.innerHTML = profitSorted.length
+    ? profitSorted.map((p, i) => renderRankedRow(p, i, 'green')).join('')
     : '<tr><td colspan="6" class="muted">No sales in this period.</td></tr>';
 
   const expBody = document.getElementById('expenseBreakdownTable');
@@ -86,6 +119,14 @@ function downloadReportExcel() {
   if (!LAST_REPORT) { toast('Please generate a report first.', 'error'); return; }
   const r = LAST_REPORT;
 
+  // Each ranked row is followed by one further row per type, indented
+  // with a leading "    ↳ " marker, right under its parent - mirrors
+  // what's shown on screen and in the server-generated CSV.
+  const expandRanked = list => list.flatMap(p => [
+    [p.types && p.types.length ? p.name + ' — Total' : p.name, p.is_service == 1 ? 'Service' : 'Product', p.qty_sold, p.revenue, p.profit],
+    ...(p.types || []).map(t => ['    ↳ ' + t.variant_name, '', t.qty_sold, t.revenue, t.profit]),
+  ]);
+
   const rows = [
     ['eDESK STATIONERY - Business Report'],
     ['Period', r.range.start + ' to ' + r.range.end],
@@ -100,11 +141,11 @@ function downloadReportExcel() {
     [],
     ['TOP SELLING PRODUCTS / SERVICES'],
     ['Name', 'Type', 'Qty Sold', 'Revenue', 'Profit'],
-    ...r.top_selling.map(p => [p.name, p.is_service == 1 ? 'Service' : 'Product', p.qty_sold, p.revenue, p.profit]),
+    ...expandRanked(r.top_selling),
     [],
     ['MOST PROFITABLE PRODUCTS / SERVICES'],
     ['Name', 'Type', 'Qty Sold', 'Revenue', 'Profit'],
-    ...r.most_profitable.map(p => [p.name, p.is_service == 1 ? 'Service' : 'Product', p.qty_sold, p.revenue, p.profit]),
+    ...expandRanked(r.most_profitable),
     [],
     ['EXPENSE BREAKDOWN'],
     ['Category', 'Amount'],
@@ -117,4 +158,3 @@ function downloadReportExcel() {
 
   exportToExcel('eDESK_Report_' + r.range.start + '_to_' + r.range.end + '.csv', [], rows);
 }
-

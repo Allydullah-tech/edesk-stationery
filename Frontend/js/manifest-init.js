@@ -1,50 +1,36 @@
-/**
- * EDESK STATIONERY - Manifest Init
- * ---------------------------------
- * InfinityFree's server-side security/bot-protection blocks Chrome's
- * internal manifest.json fetch (even though the file loads fine when
- * opened directly in a tab), which breaks "Install app" and makes
- * Chrome fall back to a plain "Create shortcut" with no logo.
- *
- * Fix: build the manifest in memory and attach it as a Blob URL, so
- * Chrome never has to fetch manifest.json over the network at all.
- * This must run as early as possible, before the browser's
- * installability check - keep this <script> tag right where the old
- * <link rel="manifest"> used to be, near the top of <head>.
- */
-(function () {
-  // Base folder of the current page (e.g. https://site.com/Frontend/)
-  var base = document.baseURI.replace(/[^/]*$/, '');
+(function() {
+    // Base folder of the current page (e.g. https://site.com/Frontend/)
+    var base = document.baseURI.replace(/[^/]*$/, '');
 
-  var manifest = {
-    name: 'eDESK Print & Digital - Business Manager',
-    short_name: 'eDESK',
-    description: 'Track stock, sales, expenses, damages and reports for eDESK - Print & Digital.',
-    start_url: base + 'index.html',
-    scope: base,
-    display: 'standalone',
-    background_color: '#101B30',
-    theme_color: '#101B30',
-    orientation: 'portrait-primary',
-    icons: [
-      { src: base + 'assets/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: base + 'assets/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: base + 'assets/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
-    ]
-  };
+    var manifest = {
+        name: 'eDESK Print & Digital - Business Manager',
+        short_name: 'eDESK',
+        description: 'Track stock, sales, expenses, damages and reports for eDESK - Print & Digital.',
+        start_url: base + 'index.html',
+        scope: base,
+        display: 'standalone',
+        background_color: '#101B30',
+        theme_color: '#101B30',
+        orientation: 'portrait-primary',
+        icons: [
+            { src: base + 'assets/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: base + 'assets/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: base + 'assets/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+        ]
+    };
 
-  try {
-    var blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement('link');
-    link.rel = 'manifest';
-    link.href = url;
-    document.head.appendChild(link);
-  } catch (e) {
-    // Fallback: if Blob creation somehow fails, still try the static file.
-    var fallback = document.createElement('link');
-    fallback.rel = 'manifest';
-    fallback.href = 'manifest.json';
-    document.head.appendChild(fallback);
-  }
+    try {
+        var blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = url;
+        document.head.appendChild(link);
+    } catch (e) {
+        // Fallback: if Blob creation somehow fails, still try the static file.
+        var fallback = document.createElement('link');
+        fallback.rel = 'manifest';
+        fallback.href = 'manifest.json';
+        document.head.appendChild(fallback);
+    }
 })();

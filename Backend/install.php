@@ -1,16 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Installer
- * Run this once in your browser: http://yourdomain/Backend/install.php
- * It will:
- *   1. Connect to MySQL using the details you provide
- *   2. Import Database/edesk_stationery.sql (create all tables)
- *   3. Create Backend/config.php with your DB details
- *   4. Create the first ADMIN account for the system
- *
- * After install completes, this file blocks itself from running again.
- * Delete config.php manually if you ever need to reinstall.
- */
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);

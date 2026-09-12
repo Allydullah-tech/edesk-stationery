@@ -5,7 +5,7 @@ let USERS_CACHE = [];
 
 (async function init() {
   await requireAuth(['admin']);
-  document.getElementById('print-date-users').textContent = 'Generated ' + new Date().toLocaleString('en-GB');
+  document.getElementById('print-date-users').textContent = new Date().toLocaleString('en-GB');
   await loadUsers();
 })();
 

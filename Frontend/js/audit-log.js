@@ -43,7 +43,7 @@ async function loadAuditLog() {
   const start = document.getElementById('fStart').value;
   const end = document.getElementById('fEnd').value;
   document.getElementById('print-date-audit').textContent =
-    (start === end ? fmtDate(start) : fmtDate(start) + ' to ' + fmtDate(end)) + ' · Generated ' + new Date().toLocaleString('en-GB');
+    (start === end ? fmtDate(start) : fmtDate(start) + ' to ' + fmtDate(end)) + ' · ' + new Date().toLocaleString('en-GB');
 
   const params = { start, end };
   const userId = document.getElementById('userFilter').value;

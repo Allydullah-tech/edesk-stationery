@@ -1,24 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Upgrade: Receipts, Audit Log, Customer Profiles
- * ------------------------------------------------------------
- * Run this ONCE in your browser:
- *   http://yourdomain/edesk-stationery/Backend/upgrade_v3_features.php
- *
- * What this adds:
- *   - audit_log table - a record of who created, edited, or deleted
- *     what, and when.
- *
- * Receipts and Customer Profiles need NO new tables - receipts are
- * built from the existing sales table (the sale's own id is its
- * receipt number), and customer profiles are computed by grouping
- * existing sales by customer_phone. Keeping it this way on purpose:
- * a second copy of a customer's name/phone that can drift out of
- * sync with what's on the actual sale is worse than not having it.
- *
- * Safe to run more than once.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

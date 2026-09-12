@@ -1,45 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Upgrade: Multi-Item Sales & Customer 360
- * ------------------------------------------------------------
- * Run this ONCE in your browser (BACK UP YOUR DATABASE FIRST - this
- * migration restructures how sales are stored):
- *   http://yourdomain/edesk-stationery/Backend/upgrade_v4_sales_customers.php
- *
- * This is the single biggest change made to this system so far. It
- * replaces the old one-row-per-product `sales` table with a proper
- * transaction structure:
- *
- *   customers          - one row per real customer (matched by phone
- *                         when given, otherwise by name).
- *   sale_transactions  - one row per checkout/receipt. Holds the
- *                         customer, payment method, and grand total.
- *   sale_items         - one row per product within a transaction.
- *                         Many sale_items belong to one sale_transaction.
- *
- * Existing data is migrated, not discarded:
- *   - Every existing row in `sales` becomes exactly one
- *     sale_transactions row + one sale_items row (a single-item
- *     transaction) - so nothing you've already recorded is lost or
- *     changed in meaning.
- *   - Transaction IDs are preserved from the old sales.id, so
- *     debt_payments (which points at a sale by id) keeps working
- *     without needing to be touched.
- *   - The old `sales` table is renamed to `sales_legacy_backup`
- *     rather than deleted, in case anything needs to be double-checked
- *     against it later.
- *
- * Also adds:
- *   - customers.status (active/restricted) and the fields needed to
- *     track WHY and WHEN a customer was restricted.
- *   - debt_payments.method / online_method, so debt repayments (not
- *     just the original sale) can be counted toward "cash vs online"
- *     payment-trend figures.
- *
- * Safe to run more than once - every step checks whether it already
- * happened before doing it again.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

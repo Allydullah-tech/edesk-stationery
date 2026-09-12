@@ -1,16 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Report Helper
- * Handles date-range resolution and data aggregation for reports.
- */
-
-/**
- * Resolve a period type + anchor date into a [start, end] date pair.
- *
- * period: day | week | month | year | custom
- * anchor: the date the user picked (for week: the start date they clicked,
- *         system auto-counts 7 days forward from it)
- */
 function resolve_period(string $period, ?string $anchor = null, ?string $endCustom = null): array
 {
     $anchor = $anchor ?: date('Y-m-d');
@@ -78,6 +66,11 @@ function build_report(PDO $pdo, string $start, string $end): array
     $damageSummary = $stmt->fetch();
 
     // ---- Top selling products/services (by quantity) ----
+    // Grouped by PARENT product only, same as always - so a product with
+    // types still shows one combined row/total here (e.g. "Pen" = every
+    // type's quantity added together). The type-level split is attached
+    // separately below, as a `types` list on each row, so both views are
+    // available without changing what this main total means.
     $stmt = $pdo->prepare('
         SELECT p.id, p.name, p.is_service,
                SUM(si.quantity) AS qty_sold,
@@ -111,6 +104,45 @@ function build_report(PDO $pdo, string $start, string $end): array
     $stmt->execute([$start, $end]);
     $mostProfitable = $stmt->fetchAll();
 
+    // ---- Type-level breakdown, for parents that have variant sales ----
+    // Attached below onto matching rows of top_selling/most_profitable as
+    // a `types` array, so the report can show both:
+    //   Pen — Total: 80 sold
+    //     ↳ Obama Pen — 50 sold
+    //     ↳ Marker Pen — 30 sold
+    // Wrapped defensively in case product_variants doesn't exist yet on
+    // this install - falls back to no breakdown, no crash.
+    $typeBreakdown = [];
+    try {
+        $stmt = $pdo->prepare('
+            SELECT si.product_id, pv.id AS variant_id, pv.variant_name,
+                   SUM(si.quantity) AS qty_sold,
+                   SUM(si.subtotal) AS revenue,
+                   SUM(si.profit) AS profit
+            FROM sale_items si
+            JOIN sale_transactions st ON st.id = si.transaction_id
+            JOIN product_variants pv ON pv.id = si.variant_id
+            WHERE st.sale_date BETWEEN ? AND ?
+            GROUP BY si.product_id, pv.id, pv.variant_name
+            ORDER BY qty_sold DESC
+        ');
+        $stmt->execute([$start, $end]);
+        foreach ($stmt->fetchAll() as $row) {
+            $typeBreakdown[$row['product_id']][] = $row;
+        }
+    } catch (PDOException $e) {
+        // product_variants table not present yet - no breakdown, no crash.
+    }
+
+    foreach ($topSelling as &$row) {
+        $row['types'] = $typeBreakdown[$row['id']] ?? [];
+    }
+    unset($row);
+    foreach ($mostProfitable as &$row) {
+        $row['types'] = $typeBreakdown[$row['id']] ?? [];
+    }
+    unset($row);
+
     // ---- Expense breakdown by category ----
     $stmt = $pdo->prepare('
         SELECT category, SUM(amount) AS total
@@ -121,14 +153,31 @@ function build_report(PDO $pdo, string $start, string $end): array
     $expenseBreakdown = $stmt->fetchAll();
 
     // ---- Damage detail list ----
-    $stmt = $pdo->prepare('
-        SELECT d.id, COALESCE(p.name, d.item_name) AS product_name, d.item_type, d.quantity, d.reason, d.loss_value, d.damage_date
-        FROM damages d LEFT JOIN products p ON p.id = d.product_id
-        WHERE d.damage_date BETWEEN ? AND ?
-        ORDER BY d.damage_date DESC
-    ');
-    $stmt->execute([$start, $end]);
-    $damageList = $stmt->fetchAll();
+    // product_name folds in the type name (e.g. "Pen — Obama Pen") when
+    // the damage was recorded against a specific type. Wrapped
+    // defensively in case the variant_id column isn't there yet.
+    try {
+        $stmt = $pdo->prepare('
+            SELECT d.id, COALESCE(CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, " — ", pv.variant_name) ELSE p.name END, d.item_name) AS product_name,
+                   d.item_type, d.quantity, d.reason, d.loss_value, d.damage_date
+            FROM damages d
+            LEFT JOIN products p ON p.id = d.product_id
+            LEFT JOIN product_variants pv ON pv.id = d.variant_id
+            WHERE d.damage_date BETWEEN ? AND ?
+            ORDER BY d.damage_date DESC
+        ');
+        $stmt->execute([$start, $end]);
+        $damageList = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        $stmt = $pdo->prepare('
+            SELECT d.id, COALESCE(p.name, d.item_name) AS product_name, d.item_type, d.quantity, d.reason, d.loss_value, d.damage_date
+            FROM damages d LEFT JOIN products p ON p.id = d.product_id
+            WHERE d.damage_date BETWEEN ? AND ?
+            ORDER BY d.damage_date DESC
+        ');
+        $stmt->execute([$start, $end]);
+        $damageList = $stmt->fetchAll();
+    }
 
     $netProfit = (float)$salesSummary['total_profit'] - (float)$expenseSummary['total_expenses'] - (float)$damageSummary['total_loss'];
 
@@ -172,14 +221,22 @@ function stream_report_csv(array $report, string $shopName): void
     fputcsv($out, ['TOP SELLING PRODUCTS / SERVICES (by quantity)']);
     fputcsv($out, ['Name', 'Type', 'Qty Sold', 'Revenue (TZS)', 'Profit (TZS)']);
     foreach ($report['top_selling'] as $row) {
-        fputcsv($out, [$row['name'], $row['is_service'] ? 'Service' : 'Product', $row['qty_sold'], $row['revenue'], $row['profit']]);
+        $label = !empty($row['types']) ? $row['name'] . ' — Total' : $row['name'];
+        fputcsv($out, [$label, $row['is_service'] ? 'Service' : 'Product', $row['qty_sold'], $row['revenue'], $row['profit']]);
+        foreach ($row['types'] ?? [] as $t) {
+            fputcsv($out, ['    ' . $t['variant_name'], '', $t['qty_sold'], $t['revenue'], $t['profit']]);
+        }
     }
     fputcsv($out, []);
 
     fputcsv($out, ['MOST PROFITABLE PRODUCTS / SERVICES']);
     fputcsv($out, ['Name', 'Type', 'Qty Sold', 'Revenue (TZS)', 'Profit (TZS)']);
     foreach ($report['most_profitable'] as $row) {
-        fputcsv($out, [$row['name'], $row['is_service'] ? 'Service' : 'Product', $row['qty_sold'], $row['revenue'], $row['profit']]);
+        $label = !empty($row['types']) ? $row['name'] . ' — Total' : $row['name'];
+        fputcsv($out, [$label, $row['is_service'] ? 'Service' : 'Product', $row['qty_sold'], $row['revenue'], $row['profit']]);
+        foreach ($row['types'] ?? [] as $t) {
+            fputcsv($out, ['    ' . $t['variant_name'], '', $t['qty_sold'], $t['revenue'], $t['profit']]);
+        }
     }
     fputcsv($out, []);
 

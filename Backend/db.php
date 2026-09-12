@@ -1,9 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Database Connection
- * Provides a single shared PDO instance.
- */
-
 if (!file_exists(__DIR__ . '/config.php')) {
     header('Content-Type: application/json');
     http_response_code(503);

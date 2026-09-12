@@ -1,29 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Upgrade: Whole-Number Quantities
- * ------------------------------------------------------------
- * Run this ONCE in your browser (BACK UP YOUR DATABASE FIRST):
- *   http://yourdomain/edesk-stationery/Backend/upgrade_v5_integer_quantities.php
- *
- * Every quantity in this system (stock, purchases, sales, damages,
- * reorder level) was stored as DECIMAL(12,2), which is why the UI
- * showed things like "10.00 pcs" instead of "10 pcs". Since stock is
- * always counted in whole units here, this migration:
- *
- *   1. Rounds any existing fractional values to the nearest whole
- *      number (there shouldn't be any, but this makes the column
- *      change safe either way).
- *   2. Converts the columns below from DECIMAL(12,2) to INT UNSIGNED:
- *        - products.stock_quantity
- *        - products.reorder_level
- *        - sale_items.quantity
- *        - purchases.quantity
- *        - damages.quantity (nullable)
- *
- * Safe to run more than once - every step checks whether it already
- * happened before doing it again.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

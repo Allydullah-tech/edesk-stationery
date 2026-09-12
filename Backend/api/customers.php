@@ -1,37 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Customer Profiles API (read-only)
- *
- * Backed by the real `customers` table (see
- * Backend/upgrade_v4_sales_customers.php) - one row per matched
- * customer (by phone if given, else by exact name). This means
- * name-only customers (no phone) now appear here too, which the
- * previous phone-only-aggregation version could not show.
- *
- * NOTE: this is the data layer only. The full "Customer 360" profile
- * (payment trends, debt trend chart, activity timeline, risk scoring
- * display, search/sort/filter UI) described in the newer spec is a
- * separate, larger frontend build that has not been done yet - this
- * file currently returns the same fields the existing Customers page
- * already displays, plus `status`/`id` so that page can be extended
- * without another backend rewrite.
- *
- * GET (no params) -> list every customer, with aggregate stats.
- *                    ?q= filters by name/phone.
- *                    ?start= / ?end= restrict "Purchases", "Total Spent"
- *                    and "Last Purchase" to sales made in that date
- *                    range - only customers with at least one sale in
- *                    the range are then returned. Outstanding debt and
- *                    overdue count are always CURRENT figures (not
- *                    period-bound), since a balance owed today isn't a
- *                    historical fact tied to any one date range.
- * GET ?id=...     -> one customer's full profile: summary, every sale
- *                    (transaction), and `payment_records` - a merged,
- *                    date-sorted list of cash sales, debt repayments,
- *                    and debts currently sitting overdue. This is a
- *                    record of what happened, not a score - no
- *                    restriction logic lives here.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/customer_helper.php';

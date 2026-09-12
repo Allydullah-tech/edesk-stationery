@@ -7,7 +7,7 @@ let DASHBOARD_DATA = null;
   await requireAuth();
   const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
   document.getElementById('today-label').textContent = 'Today — ' + dateStr;
-  document.getElementById('print-date-dashboard').textContent = dateStr + ' · Generated ' + new Date().toLocaleTimeString('en-GB');
+  document.getElementById('print-date-dashboard').textContent = dateStr + ' · ' + new Date().toLocaleTimeString('en-GB');
 
   const res = await API.get('dashboard.php');
   if (!res.success) { toast(res.message || 'Could not load dashboard.', 'error'); return; }
@@ -120,7 +120,7 @@ let DASHBOARD_DATA = null;
  * a focused shopping list, without the rest of the dashboard.
  */
 function downloadLowStock() {
-  document.getElementById('print-date-lowstock').textContent = 'Generated ' + new Date().toLocaleString('en-GB');
+  document.getElementById('print-date-lowstock').textContent = new Date().toLocaleString('en-GB');
   document.body.classList.add('print-low-stock-only');
 
   const cleanup = () => document.body.classList.remove('print-low-stock-only');

@@ -1,21 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Upgrade: System Corrections Batch
- * ------------------------------------------------------------
- * Run this ONCE in your browser:
- *   http://yourdomain/edesk-stationery/Backend/upgrade_v2_corrections.php
- *
- * Adds:
- *   - sales.customer_phone        - phone number captured with credit/debt sales
- *   - damages.product_id          - made nullable (a damage record can now be
- *                                   for something that isn't in Stock)
- *   - damages.item_type           - 'product' or 'other' (equipment/material)
- *   - damages.item_name           - free-text name used when item_type = 'other'
- *   - damages.manual_cost         - cost entered by hand when item_type = 'other'
- *
- * Safe to run more than once.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

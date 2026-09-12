@@ -1,129 +1,420 @@
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>eDESK Print &amp; Digital — Print &amp; Digital</title>
-    <meta name="description" content="Digital business management for eDESK Stationery — stock, sales, expenses and reports in one place.">
-    <script src="js/manifest-init.js"></script>
-    <link rel="icon" href="assets/icon-192.png">
-    <link rel="apple-touch-icon" href="assets/icon-192.png">
-    <meta name="theme-color" content="#101B30">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="description"
+        content="Digital business management for eDESK Stationery — stock, sales, expenses and reports in one place.">
+
+<script src="js/manifest-init.js"></script>
+
+<link rel="icon" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+
+<meta name="theme-color" content="#101B30">
+
+<link rel="stylesheet" href="css/style.css?v=2">
+
+<style>
+    /* =========================================
+       eDESK BRAND LOGO
+       ========================================= */
+
+    /* Reduced header bar height */
+    .landing-nav .inner {
+        padding: 9px 0;
+    }
+
+    .landing-nav .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    /* Increased navigation brand logo (kept header height unchanged via negative margin) */
+    .landing-nav .brand img {
+        width: 100px;
+        height: 100px;
+        object-fit: contain;
+        display: block;
+        flex-shrink: 0;
+        margin: -18px 0;
+    }
+
+    .landing-nav .brand .t1 {
+        font-weight: 800;
+        font-size: 19px;
+        line-height: 1;
+    }
+
+    .landing-nav .brand .t2 {
+        font-size: 12px;
+        line-height: 1.2;
+        margin-top: 4px;
+    }
+
+    /* Larger hero logo */
+    .hero-logo {
+        width: clamp(180px, 25vw, 280px);
+        height: auto;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto 15px;
+    }
+
+    /* Mobile adjustment */
+    @media (max-width: 600px) {
+        .landing-nav .brand img {
+            width: 78px;
+            height: 78px;
+            margin: -7px 0;
+        }
+
+        .landing-nav .brand {
+            gap: 9px;
+        }
+
+        .landing-nav .brand .t1 {
+            font-size: 20px;
+        }
+
+        .landing-nav .brand .t2 {
+            font-size: 6px;
+        }
+
+        .hero-logo {
+            width: 210px;
+        }
+    }
+</style>
+
 </head>
 
 <body>
 
-    <nav class="landing-nav">
-        <div class="container inner">
-            <div class="brand">
-                <img src="assets/logo.png" alt="eDESK Stationery logo">
-                <div>
-                    <div class="t1">eDESK Print &amp; Digital</div>
-                    <div class="t2">Print &amp; Digital</div>
-                </div>
-            </div>
-            <div class="flex gap-8">
-                <button class="btn btn-outline btn-sm js-install-btn hidden" style="color:#fff;border-color:#33436b;">Install App</button>
-                <a href="login.html"><button class="btn btn-primary btn-sm">Log In</button></a>
+<!-- =========================
+     NAVIGATION
+     ========================= -->
+<nav class="landing-nav">
+    <div class="container inner">
+
+        <div class="brand">
+            <img src="assets/logo.png" alt="eDESK Stationery logo">
+
+            <div>
+                <div class="t1">eDESK</div>
+                <div class="t2">Print &amp; Digital</div>
             </div>
         </div>
-    </nav>
 
-    <header class="hero">
-        <div class="container">
-            <img src="assets/logo.png" class="hero-logo" alt="eDESK Stationery">
-            <h1>Run your stationery business<br>the digital way.</h1>
-            <p>Stock, sales, expenses, damages and reports, all tracked in one simple app. No more notebooks.</p>
-            <div class="cta">
-                <a href="login.html"><button class="btn btn-primary">Open the App</button></a>
-                <button class="btn btn-outline js-install-btn hidden" style="color:#fff;border-color:#33436b;">Install as App</button>
-            </div>
+        <div class="flex gap-8">
+            <button class="btn btn-outline btn-sm js-install-btn hidden"
+                style="color:#fff;border-color:#33436b;">
+                Install App
+            </button>
+
+            <a href="login.html">
+                <button class="btn btn-primary btn-sm">Log In</button>
+            </a>
         </div>
-    </header>
 
+    </div>
+</nav>
+
+
+<!-- =========================
+     HERO
+     ========================= -->
+<header class="hero">
     <div class="container">
-        <div class="today-card" id="today-card">
-            <div class="head">
-                <span class="t">Today's Report</span>
-                <span class="d" id="today-date">—</span>
-            </div>
-            <div class="today-row"><span class="k">Total Sales</span><span class="v" id="t-sales">—</span></div>
-            <div class="today-row"><span class="k">Products / Services Sold</span><span class="v" id="t-count">—</span></div>
-            <div class="today-row"><span class="k">Total Expenses</span><span class="v" id="t-expenses">—</span></div>
-            <div class="today-row profit"><span class="k">Profit Today</span><span class="v" id="t-profit">—</span></div>
+
+        <img src="assets/hero-logo.png"
+            class="hero-logo"
+            alt="eDESK Stationery">
+
+        <p style="color:white;">Print. Create. Design.</p>
+
+        <p>
+            Stock, Sales, Expenses, Reports, and Damages;
+            all tracked in one simple app.
+        </p>
+
+        <div class="cta">
+
+            <a href="login.html">
+                <button class="btn btn-primary">
+                    Open the App
+                </button>
+            </a>
+
+            <button class="btn btn-outline js-install-btn hidden"
+                style="color:#fff;border-color:#33436b;">
+                Install as App
+            </button>
+
         </div>
+
+    </div>
+</header>
+
+
+<!-- =========================
+     TODAY'S REPORT
+     ========================= -->
+<div class="container">
+
+    <div class="today-card" id="today-card">
+
+        <div class="head">
+            <span class="t">Today's Report</span>
+            <span class="d" id="today-date">—</span>
+        </div>
+
+        <div class="today-row">
+            <span class="k">Total Sales</span>
+            <span class="v" id="t-sales">—</span>
+        </div>
+
+        <div class="today-row">
+            <span class="k">Products / Services Sold</span>
+            <span class="v" id="t-count">—</span>
+        </div>
+
+        <div class="today-row">
+            <span class="k">Total Expenses</span>
+            <span class="v" id="t-expenses">—</span>
+        </div>
+
+        <div class="today-row profit">
+            <span class="k">Profit Today</span>
+            <span class="v" id="t-profit">—</span>
+        </div>
+
     </div>
 
-    <section class="section">
-        <div class="container">
-            <div class="section-head">
-                <div class="eyebrow">Why eDESK</div>
-                <h2>Everything your shop needs, in one place</h2>
-                <p>Built for stationery shops to replace the exercise book with real, reliable numbers.</p>
+</div>
+
+
+<!-- =========================
+     FEATURES
+     ========================= -->
+<section class="section">
+
+    <div class="container">
+
+        <div class="section-head">
+
+            <div class="eyebrow">
+                Why eDesk
             </div>
-            <div class="feature-grid">
-                <div class="feature">
-                    <div class="fi"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></div>
-                    <h3>Stock &amp; Services</h3>
-                    <p>List every product and service with price, category and live stock levels.</p>
+
+            <h2>
+                A one-stop center for printing, online services, and digital solutions.
+            </h2>
+
+            <p>
+                Built for stationery shops to replace the exercise
+                book with real, reliable numbers.
+            </p>
+
+        </div>
+
+
+        <div class="feature-grid">
+
+            <div class="feature">
+
+                <div class="fi">
+                    <svg class="ui-icon">
+                        <use href="assets/icons.svg#package"></use>
+                    </svg>
                 </div>
-                <div class="feature">
-                    <div class="fi"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></div>
-                    <h3>Daily Sales</h3>
-                    <p>Record every sale in seconds and watch stock update automatically.</p>
-                </div>
-                <div class="feature">
-                    <div class="fi"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></div>
-                    <h3>Expenses</h3>
-                    <p>Log electricity, food and other costs so you always know your real profit.</p>
-                </div>
-                <div class="feature">
-                    <div class="fi"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></div>
-                    <h3>Damages &amp; Waste</h3>
-                    <p>Track wasted stock — like ruined printing paper — and its true cost.</p>
-                </div>
-                <div class="feature">
-                    <div class="fi"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></div>
-                    <h3>Smart Reports</h3>
-                    <p>Generate day, week, month or year reports with top sellers and profit, in one click.</p>
-                </div>
-                <div class="feature">
-                    <div class="fi"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></div>
-                    <h3>Team Access</h3>
-                    <p>Admins manage the shop; workers record sales and expenses only.</p>
-                </div>
+
+                <h3>Stock &amp; Services</h3>
+
+                <p>
+                    List every product and service with price,
+                    category and live stock levels.
+                </p>
+
             </div>
+
+
+            <div class="feature">
+
+                <div class="fi">
+                    <svg class="ui-icon">
+                        <use href="assets/icons.svg#receipt"></use>
+                    </svg>
+                </div>
+
+                <h3>Daily Sales</h3>
+
+                <p>
+                    Record every sale in seconds and watch
+                    stock update automatically.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="fi">
+                    <svg class="ui-icon">
+                        <use href="assets/icons.svg#bulb"></use>
+                    </svg>
+                </div>
+
+                <h3>Expenses</h3>
+
+                <p>
+                    Log electricity, Meals and other costs so
+                    you always know your real profit.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="fi">
+                    <svg class="ui-icon">
+                        <use href="assets/icons.svg#alert-triangle"></use>
+                    </svg>
+                </div>
+
+                <h3>Damages &amp; Waste</h3>
+
+                <p>
+                    Track wasted stock — like ruined printing
+                    paper — and its true cost.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="fi">
+                    <svg class="ui-icon">
+                        <use href="assets/icons.svg#bar-chart"></use>
+                    </svg>
+                </div>
+
+                <h3>Smart Reports</h3>
+
+                <p>
+                    Generate day, week, month or year reports
+                    with top sells and profit, in one click.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="fi">
+                    <svg class="ui-icon">
+                        <use href="assets/icons.svg#users"></use>
+                    </svg>
+                </div>
+
+                <h3>Team Access</h3>
+
+                <p>
+                    Admins manage the shop; workers record
+                    sales and expenses only.
+                </p>
+
+            </div>
+
         </div>
-    </section>
 
-    <footer class="landing-footer">
-        <div class="container">
-            <span class="b">eDESK Print &amp; Digital</span> — Print &amp; Digital &nbsp;·&nbsp; Digital Business Manager &copy; <span id="year"></span>
-        </div>
-    </footer>
+    </div>
 
-    <script src="js/api.js"></script>
-    <script src="js/ui.js"></script>
-    <script>
-        document.getElementById('year').textContent = new Date().getFullYear();
+</section>
 
-        (async function loadTodayReport() {
-            const res = await API._request(API.apiBase + 'public_today.php', 'GET');
-            if (!res.success) {
-                document.getElementById('today-card').innerHTML =
-                    '<div class="head"><span class="t">Today\'s Report</span></div><p class="muted" style="font-size:12px;margin:4px 0 0;">Report will appear here once the system is installed and in use.</p>';
-                return;
-            }
-            const d = res.data;
-            document.getElementById('today-date').textContent = d.date;
-            document.getElementById('t-sales').textContent = money(d.total_sales);
-            document.getElementById('t-count').textContent = d.transactions;
-            document.getElementById('t-expenses').textContent = money(d.total_expenses);
-            document.getElementById('t-profit').textContent = money(d.net_profit);
-        })();
-    </script>
+
+<!-- =========================
+     FOOTER
+     ========================= -->
+<footer class="landing-footer">
+
+    <div class="container">
+
+        <span class="b">
+            eDesk Print &amp; Digital
+        </span>
+
+        — Print &amp; Digital &nbsp;·&nbsp;
+        Digital Business Manager
+        &copy;
+        <span id="year"></span>
+
+    </div>
+
+</footer>
+
+
+<!-- =========================
+     SCRIPTS
+     ========================= -->
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+
+<script>
+
+    // Current year
+    document.getElementById('year').textContent =
+        new Date().getFullYear();
+
+
+    // Load today's report
+    (async function loadTodayReport() {
+
+        const res = await API._request(
+            API.apiBase + 'public_today.php',
+            'GET'
+        );
+
+        if (!res.success) {
+
+            document.getElementById('today-card').innerHTML =
+                '<div class="head">' +
+                '<span class="t">Today\'s Report</span>' +
+                '</div>' +
+                '<p class="muted" style="font-size:12px;margin:4px 0 0;">' +
+                'Report will appear here once the system is installed and in use.' +
+                '</p>';
+
+            return;
+        }
+
+        const d = res.data;
+
+        document.getElementById('today-date').textContent =
+            d.date;
+
+        document.getElementById('t-sales').textContent =
+            money(d.total_sales);
+
+        document.getElementById('t-count').textContent =
+            d.transactions;
+
+        document.getElementById('t-expenses').textContent =
+            money(d.total_expenses);
+
+        document.getElementById('t-profit').textContent =
+            money(d.net_profit);
+
+    })();
+
+</script>
+
 </body>
 
 </html>

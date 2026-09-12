@@ -15,12 +15,7 @@
     <div class="app-shell">
 
         <aside class="sidebar no-print">
-            <div class="brand"><img src="assets/logo.png" alt="eDESK">
-                <div>
-                    <div class="t1">eDESK</div>
-                    <div class="t2">Print &amp; Digital</div>
-                </div>
-            </div>
+            <div class="brand"><img src="assets/hero-logo.png" alt="eDESK"> </div>
             <div class="nav-group">
                 <div class="nav-label">Overview</div>
                 <a href="dashboard.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a></div>
@@ -71,12 +66,18 @@
 
             <div class="main-content">
                 <div class="print-header">
-                    <img src="assets/logo.png" alt="eDESK Stationery">
-                    <div class="doc-brand-name">eDESK</div>
-                    <div class="doc-brand-tagline">Print &amp; Digital</div>
-                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
-                    <h2>Damages &amp; Waste Report</h2>
-                    <div class="meta" id="print-date-damages"></div>
+                    <div class="ph-top">
+                        <img src="assets/logo1.png" alt="eDESK">
+                        <div class="ph-brand">
+                            <div class="doc-brand-name">eDesk<span>PRINT &amp; DIGITAL</span></div>
+                            <div class="doc-brand-tagline">Print. Apply. Create.</div>
+                            <div class="doc-brand-address">Iyunga, Mbeya &nbsp;|&nbsp; Tel: +255 763 399 399</div>
+                        </div>
+                    </div>
+                    <div class="ph-bottom">
+                        <div class="ph-report-of">REPORT: <strong>Damages &amp; Waste</strong></div>
+                        <div class="meta" id="print-date-damages"></div>
+                    </div>
                 </div>
                 <div class="stat-grid mt-8 no-print" style="margin-bottom:16px;">
                     <div class="stat-card">
@@ -160,6 +161,13 @@
                         <input type="hidden" id="dm-product-id">
                         <div id="dm-product-suggestions" class="autocomplete-list hidden"></div>
                         <p class="help-text">Start typing to search, then tap a result to select it.</p>
+                    </div>
+                    <div class="field hidden" id="dm-type-field">
+                        <label>Type</label>
+                        <select id="dm-type-select" onchange="selectDamageVariantType()">
+                            <option value="">Select a type...</option>
+                        </select>
+                        <p class="help-text">This product has several types — pick the specific one that was damaged.</p>
                     </div>
                     <div class="field hidden" id="dm-other-field">
                         <label>Item Name</label>

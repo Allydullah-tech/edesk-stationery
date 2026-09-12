@@ -1,21 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Debts (Madeni / Credit Sales) API
- *
- * A credit "sale" here is a sale_transactions row that can contain
- * several products - see Backend/api/sales.php. The item list is
- * summarized (comma-separated names) since a debt can span more than
- * one product now.
- *
- * GET  -> list credit sales with their computed remaining balance.
- *         ?scope=today restricts to sales made today (for the dashboard widget).
- *         ?status=pending|overdue|paid filters by computed status.
- *         ?history=<id> returns full payment history for one credit sale.
- * POST -> record a repayment against a credit sale.
- *         body: { sale_id, amount, method, online_method, payment_date, note }
- *         Recording a payment re-checks the customer's overdue count and
- *         may lift them out of/into DEBT RESTRICTED status.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';

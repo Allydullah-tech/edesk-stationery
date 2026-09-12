@@ -1,26 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Customer matching, debt-restriction, and
- * payment-score logic. Shared by sales.php, debts.php, and customers.php
- * so all three agree on what a customer's status and score are - see
- * the note in customers.php about NOT building three different scoring
- * systems that can disagree with each other.
- */
-
-/**
- * Find-or-create the customer for a sale, given whatever name/phone was
- * typed on that sale. Returns a customer id, or null if neither was given.
- *
- * Matching rule:
- *  - Phone given -> match/create by phone (the reliable identifier).
- *    If the customer's name was blank before, fill it in from this sale.
- *  - No phone, name given -> match/create by exact name among customers
- *    who ALSO have no phone on file. This is a soft match: two different
- *    real people with the same name and no phone will be merged into one
- *    customer record. There is no fix for that without requiring a phone
- *    number, which was explicitly asked to stay optional.
- *  - Neither given -> no customer record, returns null.
- */
 function resolve_customer(PDO $pdo, ?string $name, ?string $phone): ?int
 {
     $name = trim((string)$name);

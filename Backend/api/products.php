@@ -1,14 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Products & Services API
- * GET    -> list all (admin + worker can view, needed for recording sales)
- * POST   -> create new product/service (admin only). Only "name" is
- *           required - this lets a bare "name only" entry be added to
- *           the Product/Service list first (e.g. from the Purchases
- *           page), with prices and stock filled in later.
- * PUT    -> update existing (admin only)
- * DELETE -> remove (admin only)   ?id=
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
@@ -23,6 +13,16 @@ if ($method === 'GET') {
         $stmt->execute([(int)$_GET['id']]);
         $row = $stmt->fetch();
         if (!$row) respond(false, null, 'Product not found.', 404);
+
+        // Fold in this product's types, if any exist yet (harmless if the
+        // product_variants table isn't there yet - just comes back empty).
+        try {
+            $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE product_id = ? ORDER BY variant_name ASC');
+            $vStmt->execute([$row['id']]);
+            $row['variants'] = $vStmt->fetchAll();
+        } catch (PDOException $e) {
+            $row['variants'] = [];
+        }
         respond(true, $row);
     }
 
@@ -37,11 +37,47 @@ if ($method === 'GET') {
         respond(true, $stmt->fetchAll());
     }
 
-    $stmt = $pdo->prepare("SELECT p.*, c.name AS category_name FROM products p
-                            LEFT JOIN categories c ON c.id = p.category_id
-                            $where ORDER BY p.name ASC");
-    $stmt->execute($params);
-    respond(true, $stmt->fetchAll());
+    // Each product's types (product_variants) are folded in here so the
+    // Products page and the Sales picker both know, without a second call
+    // per row, whether a product is a plain item or a parent with several
+    // types - and if it's a parent, its combined stock, price range, and
+    // whether any type is running low.
+    try {
+        $stmt = $pdo->prepare("SELECT p.*, c.name AS category_name,
+                COALESCE(v.variant_count, 0) AS variant_count,
+                CASE WHEN v.variant_count > 0 THEN v.total_stock ELSE p.stock_quantity END AS stock_quantity,
+                v.min_buying, v.max_buying, v.min_selling, v.max_selling,
+                COALESCE(v.total_value, 0) AS variant_stock_value,
+                CASE WHEN v.low_variant_count > 0 THEN 1 ELSE 0 END AS has_low_variant
+            FROM products p
+            LEFT JOIN categories c ON c.id = p.category_id
+            LEFT JOIN (
+                SELECT product_id,
+                       COUNT(*) AS variant_count,
+                       SUM(stock_quantity) AS total_stock,
+                       SUM(stock_quantity * buying_price) AS total_value,
+                       MIN(buying_price) AS min_buying,
+                       MAX(buying_price) AS max_buying,
+                       MIN(selling_price) AS min_selling,
+                       MAX(selling_price) AS max_selling,
+                       SUM(CASE WHEN status = 'active' AND stock_quantity <= reorder_level THEN 1 ELSE 0 END) AS low_variant_count
+                FROM product_variants
+                WHERE status = 'active'
+                GROUP BY product_id
+            ) v ON v.product_id = p.id
+            $where ORDER BY p.name ASC");
+        $stmt->execute($params);
+        respond(true, $stmt->fetchAll());
+    } catch (PDOException $e) {
+        // product_variants table not present yet (the upgrade script
+        // hasn't been run) - fall back to the plain product list so the
+        // page still loads normally.
+        $stmt = $pdo->prepare("SELECT p.*, c.name AS category_name FROM products p
+                                LEFT JOIN categories c ON c.id = p.category_id
+                                $where ORDER BY p.name ASC");
+        $stmt->execute($params);
+        respond(true, $stmt->fetchAll());
+    }
 }
 
 if ($method === 'POST') {

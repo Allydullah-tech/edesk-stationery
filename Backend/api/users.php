@@ -1,11 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Users API (Admin only)
- * GET    -> list all users
- * POST   -> add new admin or worker
- * PUT    -> update a user (name, role, status) - not password
- * DELETE -> remove a user ?id=
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';

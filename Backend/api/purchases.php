@@ -1,23 +1,4 @@
 <?php
-/**
- * eDESK STATIONERY - Purchases API
- * Handles stock being received - either one product at a time, or a
- * bulk list imported from a supplier's Excel/CSV file.
- *
- * GET  -> list recent purchases (any logged-in user can view)
- *         optional filters: ?source=manual|import
- *                            &period=day|week|month|year|custom &date=YYYY-MM-DD &end=YYYY-MM-DD
- *         (period/date/end resolved the same way as the Reports page - see resolve_period())
- * POST -> admin only. body: { items: [ { name, quantity, buying_price, selling_price,
- *                             category, unit, purchase_date, note }, ... ] }
- *         For each item: if a product with that name already exists in
- *         Stock (case-insensitive match), its stock_quantity is increased
- *         and its prices are updated only if new prices were given.
- *         If no match exists, a brand new product is created (buying and
- *         selling price are required in that case).
- *         The whole batch is all-or-nothing: if any row fails validation,
- *         nothing is saved and the specific problem is reported back.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
@@ -45,13 +26,31 @@ if ($method === 'GET') {
         $params[] = $periodEnd;
     }
 
-    $stmt = $pdo->prepare("SELECT pu.*, p.name AS product_name, p.unit, u.full_name AS recorded_by_name
-                            FROM purchases pu
-                            JOIN products p ON p.id = pu.product_id
-                            JOIN users u ON u.id = pu.recorded_by
-                            $where ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT $limit");
-    $stmt->execute($params);
-    respond(true, $stmt->fetchAll());
+    // product_name/unit fold in the type name (e.g. "Pen — Obama Pen") so
+    // the Purchases table needs no other changes. Wrapped defensively in
+    // case Backend/upgrade_add_variant_to_purchases_damages.php hasn't
+    // been run yet on this install (older "purchases" table without the
+    // variant_id column) - the page should still load either way.
+    try {
+        $stmt = $pdo->prepare("SELECT pu.*,
+                                CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, ' — ', pv.variant_name) ELSE p.name END AS product_name,
+                                COALESCE(pv.unit, p.unit) AS unit, u.full_name AS recorded_by_name
+                                FROM purchases pu
+                                JOIN products p ON p.id = pu.product_id
+                                LEFT JOIN product_variants pv ON pv.id = pu.variant_id
+                                JOIN users u ON u.id = pu.recorded_by
+                                $where ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT $limit");
+        $stmt->execute($params);
+        respond(true, $stmt->fetchAll());
+    } catch (PDOException $e) {
+        $stmt = $pdo->prepare("SELECT pu.*, p.name AS product_name, p.unit, u.full_name AS recorded_by_name
+                                FROM purchases pu
+                                JOIN products p ON p.id = pu.product_id
+                                JOIN users u ON u.id = pu.recorded_by
+                                $where ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT $limit");
+        $stmt->execute($params);
+        respond(true, $stmt->fetchAll());
+    }
 }
 
 if ($method === 'POST') {
@@ -63,13 +62,14 @@ if ($method === 'POST') {
         respond(false, null, 'No items were submitted.', 422);
     }
 
-    // ---- Pass 1: validate everything first, resolve product matches ----
+    // ---- Pass 1: validate everything first, resolve product/type matches ----
     $resolved = [];
     $errors = [];
 
     foreach ($items as $i => $item) {
         $rowNum = $i + 1;
         $name = clean($item['name'] ?? '');
+        $variantName = clean($item['variant_name'] ?? '');
         $qty = isset($item['quantity']) && $item['quantity'] !== '' ? (int)$item['quantity'] : null;
 
         if ($name === '') { $errors[] = "Row $rowNum: product name is missing."; continue; }
@@ -82,21 +82,45 @@ if ($method === 'POST') {
         $buyingPrice = isset($item['buying_price']) && $item['buying_price'] !== '' ? (float)$item['buying_price'] : null;
         $sellingPrice = isset($item['selling_price']) && $item['selling_price'] !== '' ? (float)$item['selling_price'] : null;
 
+        $hasVariants = false;
+        $variant = null;
+
         if (!$existing) {
             if ($buyingPrice === null || $sellingPrice === null) {
                 $errors[] = "Row $rowNum ($name): this is a new product, so both Buying Price and Selling Price are required.";
                 continue;
             }
+        } else {
+            $vCountStmt = $pdo->prepare('SELECT COUNT(*) FROM product_variants WHERE product_id = ?');
+            $vCountStmt->execute([$existing['id']]);
+            $hasVariants = (int)$vCountStmt->fetchColumn() > 0;
+
+            if ($hasVariants) {
+                if ($variantName === '') {
+                    $errors[] = "Row $rowNum ($name): this product has types - please specify which type (e.g. \"Obama Pen\").";
+                    continue;
+                }
+                $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE product_id = ? AND LOWER(variant_name) = LOWER(?)');
+                $vStmt->execute([$existing['id'], $variantName]);
+                $variant = $vStmt->fetch();
+                if (!$variant && ($buyingPrice === null || $sellingPrice === null)) {
+                    $errors[] = "Row $rowNum ($name — $variantName): this is a new type, so both Buying Price and Selling Price are required.";
+                    continue;
+                }
+            }
         }
 
         $resolved[] = [
             'name' => $name,
+            'variant_name' => $variantName,
             'quantity' => $qty,
             'buying_price' => $buyingPrice,
             'selling_price' => $sellingPrice,
             'category' => clean($item['category'] ?? ''),
             'unit' => clean($item['unit'] ?? 'pcs') ?: 'pcs',
             'existing' => $existing,
+            'has_variants' => $hasVariants,
+            'variant' => $variant,
         ];
     }
 
@@ -113,20 +137,48 @@ if ($method === 'POST') {
         $updated = 0;
 
         foreach ($resolved as $row) {
+            $variantId = null;
+
             if ($row['existing']) {
                 $productId = $row['existing']['id'];
-                $fields = ['stock_quantity = stock_quantity + ?'];
-                $params = [$row['quantity']];
 
-                if ($row['buying_price'] !== null) { $fields[] = 'buying_price = ?'; $params[] = $row['buying_price']; }
-                if ($row['selling_price'] !== null) { $fields[] = 'selling_price = ?'; $params[] = $row['selling_price']; }
-                $fields[] = 'updated_at = NOW()';
-                $params[] = $productId;
-
-                $pdo->prepare('UPDATE products SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
-                $buyingPriceUsed = $row['buying_price'] !== null ? $row['buying_price'] : (float)$row['existing']['buying_price'];
-                $updated++;
+                if ($row['has_variants']) {
+                    if ($row['variant']) {
+                        // Restock an existing type.
+                        $variantId = $row['variant']['id'];
+                        $fields = ['stock_quantity = stock_quantity + ?'];
+                        $params = [$row['quantity']];
+                        if ($row['buying_price'] !== null) { $fields[] = 'buying_price = ?'; $params[] = $row['buying_price']; }
+                        if ($row['selling_price'] !== null) { $fields[] = 'selling_price = ?'; $params[] = $row['selling_price']; }
+                        $fields[] = 'updated_at = NOW()';
+                        $params[] = $variantId;
+                        $pdo->prepare('UPDATE product_variants SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+                        $buyingPriceUsed = $row['buying_price'] !== null ? $row['buying_price'] : (float)$row['variant']['buying_price'];
+                        $updated++;
+                    } else {
+                        // Brand new type under this existing parent product.
+                        $insV = $pdo->prepare('INSERT INTO product_variants
+                            (product_id, variant_name, unit, buying_price, selling_price, stock_quantity, reorder_level, status, created_by, created_at, updated_at)
+                            VALUES (?,?,?,?,?,?,5,"active",?,NOW(),NOW())');
+                        $insV->execute([$productId, $row['variant_name'], $row['unit'], $row['buying_price'], $row['selling_price'], $row['quantity'], $user['id']]);
+                        $variantId = $pdo->lastInsertId();
+                        $buyingPriceUsed = $row['buying_price'];
+                        $created++;
+                    }
+                } else {
+                    // Plain product restock - unchanged from before this feature.
+                    $fields = ['stock_quantity = stock_quantity + ?'];
+                    $params = [$row['quantity']];
+                    if ($row['buying_price'] !== null) { $fields[] = 'buying_price = ?'; $params[] = $row['buying_price']; }
+                    if ($row['selling_price'] !== null) { $fields[] = 'selling_price = ?'; $params[] = $row['selling_price']; }
+                    $fields[] = 'updated_at = NOW()';
+                    $params[] = $productId;
+                    $pdo->prepare('UPDATE products SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+                    $buyingPriceUsed = $row['buying_price'] !== null ? $row['buying_price'] : (float)$row['existing']['buying_price'];
+                    $updated++;
+                }
             } else {
+                // Brand new product - unchanged from before this feature.
                 $categoryId = null;
                 if ($row['category'] !== '') {
                     $pdo->prepare('INSERT INTO categories (name) VALUES (?) ON DUPLICATE KEY UPDATE name = name')->execute([$row['category']]);
@@ -148,19 +200,22 @@ if ($method === 'POST') {
             }
 
             $totalCost = round($row['quantity'] * $buyingPriceUsed, 2);
-            $pdo->prepare('INSERT INTO purchases (product_id, quantity, buying_price, total_cost, source, note, recorded_by, purchase_date, created_at)
-                            VALUES (?,?,?,?,?,?,?,?,NOW())')
-                ->execute([$productId, $row['quantity'], $buyingPriceUsed, $totalCost, $source, clean($d['note'] ?? ''), $user['id'], $purchaseDate]);
+            $pdo->prepare('INSERT INTO purchases (product_id, variant_id, quantity, buying_price, total_cost, source, note, recorded_by, purchase_date, created_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,NOW())')
+                ->execute([$productId, $variantId, $row['quantity'], $buyingPriceUsed, $totalCost, $source, clean($d['note'] ?? ''), $user['id'], $purchaseDate]);
         }
 
         $pdo->commit();
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        if (strpos($e->getMessage(), 'variant_id') !== false) {
+            respond(false, null, 'The database is missing the "variant_id" column. Please run Backend/upgrade_add_variant_to_purchases_damages.php once, then try again.', 500);
+        }
         respond(false, null, 'Could not save the purchase. Please try again.', 500);
     }
 
     $itemSummary = count($resolved) === 1
-        ? '"' . $resolved[0]['name'] . '" (' . $resolved[0]['quantity'] . ' ' . $resolved[0]['unit'] . ')'
+        ? '"' . $resolved[0]['name'] . ($resolved[0]['variant_name'] !== '' ? ' — ' . $resolved[0]['variant_name'] : '') . '" (' . $resolved[0]['quantity'] . ' ' . $resolved[0]['unit'] . ')'
         : count($resolved) . ' product(s)';
     log_activity($pdo, $user, 'create', 'purchase', null,
         'Recorded a ' . $source . ' purchase of ' . $itemSummary . ': ' . $created . ' new item(s) added, ' . $updated . ' item(s) restocked');

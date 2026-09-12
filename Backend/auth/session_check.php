@@ -1,7 +1,4 @@
 <?php
-/**
- * Returns the currently logged-in user (or 401 if none).
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 

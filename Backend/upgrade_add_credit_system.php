@@ -1,15 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Upgrade: Add Credit/Debt (Madeni) system
- * -------------------------------------------------------------------
- * Run this ONCE in your browser:
- *   http://yourdomain/edesk-stationery/Backend/upgrade_add_credit_system.php
- *
- * Adds payment-method columns to the sales table, and a new
- * debt_payments table for tracking repayments on credit sales.
- * Safe to run more than once.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

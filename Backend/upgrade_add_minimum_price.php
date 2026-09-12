@@ -1,15 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Upgrade: Add minimum_price column
- * ------------------------------------------------------------
- * Run this ONCE in your browser:
- *   http://yourdomain/edesk-stationery/Backend/upgrade_add_minimum_price.php
- *
- * Adds an optional "minimum_price" column to the products table, used
- * to stop a sale from being recorded below a floor price you set.
- * Safe to run more than once.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

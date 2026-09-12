@@ -1,8 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Login
- * POST { username, password }
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';

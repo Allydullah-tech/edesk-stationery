@@ -18,13 +18,7 @@
     <div class="app-shell">
 
         <aside class="sidebar no-print">
-            <div class="brand">
-                <img src="assets/logo.png" alt="eDESK">
-                <div>
-                    <div class="t1">eDESK</div>
-                    <div class="t2">Print &amp; Digital</div>
-                </div>
-            </div>
+            <div class="brand"><img src="assets/hero-logo.png" alt="eDESK"> </div>
             <div class="nav-group">
                 <div class="nav-label">Overview</div>
                 <a href="dashboard.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a></div>
@@ -76,16 +70,24 @@
 
             <div class="main-content">
                 <div class="print-header">
-                    <img src="assets/logo.png" alt="eDESK">
-                    <div class="doc-brand-name">eDESK</div>
-                    <div class="doc-brand-tagline">Print &amp; Digital</div>
-                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
-                    <h2>Products Report</h2>
-                    <div class="meta" id="print-date-products"></div>
+                    <div class="ph-top">
+                        <img src="assets/logo1.png" alt="eDESK">
+                        <div class="ph-brand">
+                            <div class="doc-brand-name">eDesk<span>PRINT &amp; DIGITAL</span></div>
+                            <div class="doc-brand-tagline">Print. Apply. Create.</div>
+                            <div class="doc-brand-address">Iyunga, Mbeya &nbsp;|&nbsp; Tel: +255 763 399 399</div>
+                        </div>
+                    </div>
+                    <div class="ph-bottom">
+                        <div class="ph-report-of">REPORT: <strong>Products</strong></div>
+                        <div class="meta" id="print-date-products"></div>
+                    </div>
                 </div>
                 <p class="help-text no-print" style="margin-bottom:12px;">
                     Use "+ Add Item" for a quick, direct addition when needed. For normal stock intake, the
-                    <a href="purchases.html" class="gold">Purchases</a> page is the recommended way in.
+                    <a href="purchases.html" class="gold">Purchases</a> page is the recommended way in. A product
+                    with several types (e.g. "Pen" with Obama Pen, Marker Pen, etc) can be set up from the
+                    "Types" column below, instead of adding each type as its own separate product.
                 </p>
                 <div class="card">
                     <div class="filter-bar mt-8 no-print" style="margin-bottom:14px;">
@@ -106,13 +108,14 @@
                                     <th>Selling Price</th>
                                     <th>Unit</th>
                                     <th>Quantity</th>
+                                    <th class="no-print">Types</th>
                                     <th class="no-print">Status</th>
                                     <th class="admin-only no-print">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="productsBody">
                                 <tr>
-                                    <td colspan="9" class="muted">Loading...</td>
+                                    <td colspan="10" class="muted">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -193,6 +196,7 @@
                         <select id="p-status"><option value="active">Active</option><option value="disabled">Disabled</option></select>
                         <p class="help-text">"Low" is shown automatically once stock falls below the Reorder Alert Level - it isn't set by hand.</p>
                     </div>
+                    <p class="help-text">If this item will have several types (e.g. "Pen" with Obama Pen, Marker Pen...), save it here first with any placeholder price, then use the "Types" column on the list to add each type with its own price and stock.</p>
                     <button type="submit" class="btn btn-primary w-full mt-8">Save Item</button>
                 </form>
             </div>
@@ -213,6 +217,93 @@
                 </form>
                 <input type="text" id="namesOnlySearch" placeholder="Search names..." oninput="renderNamesOnlyList()" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;margin-bottom:10px;">
                 <div id="namesOnlyList" style="max-height:55vh;overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Types (variants) Modal -->
+    <div class="modal-overlay" id="typesModal">
+        <div class="modal modal-lg">
+            <div class="modal-head">
+                <h3 id="typesModalTitle">Types</h3>
+                <button class="modal-close" onclick="closeModal('typesModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
+            </div>
+            <div class="modal-body">
+                <p class="help-text" id="typesModalSubtitle"></p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Buying Price</th>
+                                <th>Minimum Price</th>
+                                <th>Selling Price</th>
+                                <th>Unit</th>
+                                <th>Stock</th>
+                                <th>Reorder At</th>
+                                <th class="no-print">Status</th>
+                                <th class="admin-only no-print">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="typesBody">
+                            <tr>
+                                <td colspan="9" class="muted">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="report-totals-row">
+                    <div class="rt-item">Combined Stock<strong id="types-total-stock">0</strong></div>
+                </div>
+
+                <form id="variantForm" class="admin-only mt-16">
+                    <input type="hidden" id="v-id">
+                    <input type="hidden" id="v-product-id">
+                    <h4 id="variantFormTitle" style="margin:0 0 8px;">+ Add Type</h4>
+                    <div class="field">
+                        <label>Type Name</label>
+                        <input type="text" id="v-name" required placeholder="e.g. Obama Pen">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Buying Price (TZS)</label>
+                            <input type="number" id="v-buying" min="0" step="0.01">
+                        </div>
+                        <div class="field">
+                            <label>Selling Price (TZS)</label>
+                            <input type="number" id="v-selling" min="0" step="0.01" required>
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Minimum Selling Price (TZS) — optional</label>
+                            <input type="number" id="v-minimum" min="0" step="0.01">
+                        </div>
+                        <div class="field">
+                            <label>Unit</label>
+                            <input type="text" id="v-unit" placeholder="pcs, box..." value="pcs">
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Stock Quantity</label>
+                            <input type="number" id="v-stock" min="0" step="1" value="0">
+                        </div>
+                        <div class="field">
+                            <label>Reorder Alert Level</label>
+                            <input type="number" id="v-reorder" min="0" step="1" value="5">
+                        </div>
+                    </div>
+                    <div class="field" id="v-statusField" style="display:none;">
+                        <label>Status</label>
+                        <select id="v-status"><option value="active">Active</option><option value="disabled">Disabled</option></select>
+                    </div>
+                    <div class="flex gap-8">
+                        <button type="submit" class="btn btn-primary w-full mt-8" id="variantSubmitBtn">Add Type</button>
+                        <button type="button" class="btn btn-outline w-full mt-8 hidden" id="variantCancelBtn" onclick="resetVariantForm()">Cancel</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

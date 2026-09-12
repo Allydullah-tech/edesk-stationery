@@ -149,3 +149,28 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   });
 }
+
+// --------- Remember scroll position per page ---------
+// Sidebar links load a brand-new page each time, so the browser has no
+// memory of where you were. This saves your scroll position for the page
+// you're leaving, and restores it if you come back to that same page later
+// in this session - so navigating around doesn't feel like it keeps
+// snapping you back to the top.
+(function () {
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
+  const scrollKey = 'scrollPos:' + location.pathname;
+
+  const saveScrollPos = () => sessionStorage.setItem(scrollKey, String(window.scrollY));
+  window.addEventListener('pagehide', saveScrollPos);
+  window.addEventListener('beforeunload', saveScrollPos);
+
+  const saved = sessionStorage.getItem(scrollKey);
+  if (saved !== null) {
+    // Restore after layout has fully settled, not before.
+    window.addEventListener('load', () => {
+      window.scrollTo(0, parseInt(saved, 10) || 0);
+    });
+  }
+})();

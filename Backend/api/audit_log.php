@@ -1,13 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Activity / Audit Log API (read-only)
- * GET -> list log entries, most recent first.
- *        Filters: ?start=&end= (date range on created_at),
- *                 ?user_id=, ?entity_type=, ?action=,
- *                 ?q= free-text search (user name, description, module, action)
- * Admin only - this is precisely the kind of record a worker should
- * not be able to browse or, worse, clear.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 

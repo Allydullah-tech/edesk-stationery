@@ -1,9 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Own Profile API
- * GET -> current user's profile
- * PUT -> update own name / password / security question (requires current password)
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 

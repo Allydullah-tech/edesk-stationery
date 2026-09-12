@@ -1,19 +1,4 @@
 <?php
-/**
- * eDESK STATIONERY - Upgrade: Add Purchases table
- * ------------------------------------------------
- * Run this ONCE in your browser if your system was installed before the
- * Purchases feature existed:
- *   http://yourdomain/edesk-stationery/Backend/upgrade_add_purchases.php
- *
- * It safely adds the new "purchases" table to your EXISTING database
- * without touching any of your current products, sales, users, etc.
- * It is safe to run more than once - it will simply say the table
- * already exists.
- *
- * You can delete this file afterwards if you like, or just leave it.
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 

@@ -1,24 +1,3 @@
--- =========================================================
--- EDESK STATIONERY - Business Management System
--- Database Schema (Consolidated - includes all fixes)
--- =========================================================
--- This is the single, up-to-date schema file. It merges what used
--- to be five separate dump files plus two follow-up fixes:
---   - debt_payments.sale_id correctly references sale_transactions
---     (not the legacy `sales` table from before the v4 migration).
---   - All quantity columns (stock, purchases, sale items, damages,
---     reorder level) are whole numbers (INT UNSIGNED), not
---     DECIMAL(12,2), since stock here is always counted in whole
---     units (pcs, reams, boxes, etc).
---
--- For a brand-new install: replace Database/edesk_stationery.sql
--- with this file and run Backend/install.php as normal - no
--- upgrade_*.php scripts need to be run afterward.
---
--- For an EXISTING site: do not re-import this over live data.
--- Keep using the upgrade_v5_integer_quantities.php script and the
--- fix_debt_payments_fk.sql fix you already have instead.
--- =========================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 

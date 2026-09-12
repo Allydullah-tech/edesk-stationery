@@ -1,9 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Public "Today's Report" widget for the landing page.
- * Intentionally returns ONLY high-level totals (no customer names, no line items)
- * so it is safe to show before login.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/report_helper.php';

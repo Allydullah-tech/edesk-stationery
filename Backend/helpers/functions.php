@@ -1,20 +1,8 @@
 <?php
-/**
- * eDESK Print & Digital - Shared Helper Functions
- */
-
-// Never let raw PHP warnings/notices leak into what should be pure JSON
-// output - they'd break JSON.parse() on the frontend and show up as a
-// vague "Unexpected server response." Errors are still logged server-side
-// (check your host's PHP error log), just never echoed into the response.
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
-/**
- * Turn ANY uncaught PHP error (missing column, typo, etc.) into a clean
- * JSON error response instead of a broken HTML/plain-text page - this is
- * a safety net on top of the try/catch blocks already in each endpoint.
- */
+
 set_error_handler(function ($severity, $message, $file, $line) {
     if (!(error_reporting() & $severity)) return false;
     throw new ErrorException($message, 0, $severity, $file, $line);

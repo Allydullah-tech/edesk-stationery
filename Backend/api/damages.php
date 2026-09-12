@@ -1,23 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Damages / Wasted Stock API
- * GET    -> list (admin + worker can view)
- * POST   -> record a damage/waste entry (admin + worker - stock adjustment)
- *           body: { item_type: 'product'|'other', ... }
- *           - item_type = 'product' (default): { product_id, quantity, reason }
- *             Loss value is calculated automatically from the product's
- *             buying price, and stock is reduced.
- *           - item_type = 'other': { item_name, manual_cost, reason }
- *             For equipment, materials, or anything else that isn't in
- *             Stock. The cost is entered by hand since there's no stock
- *             record to calculate a loss value from.
- * PUT    -> edit an existing entry (admin + worker, logged). Cannot
- *           switch a record between product/non-stock - that's a
- *           delete-and-re-add, not an edit. Quantity/cost changes
- *           re-adjust stock and loss value automatically.
- * DELETE -> remove entry (admin + worker, logged) ?id=. Restores stock
- *           for a product-type entry, since deleting is a correction.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
@@ -33,18 +14,34 @@ if ($method === 'GET') {
     if (!empty($_GET['end']))   { $where .= ' AND d.damage_date <= ?'; $params[] = clean($_GET['end']); }
     $limit = !empty($_GET['limit']) ? (int)$_GET['limit'] : 100;
 
+    // product_name/unit fold in the type name (e.g. "Pen — Obama Pen") so
+    // the frontend needs no other changes for that part. Wrapped
+    // defensively in two layers: the non-stock damage columns (older
+    // installs) and the variant_id column (see
+    // Backend/upgrade_add_variant_to_purchases_damages.php) - either
+    // missing should degrade gracefully rather than break the page.
     try {
-        $stmt = $pdo->prepare("SELECT d.*, p.name AS product_name, p.unit AS unit, u.full_name AS recorded_by_name FROM damages d
+        $stmt = $pdo->prepare("SELECT d.*,
+                                CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, ' — ', pv.variant_name) ELSE p.name END AS product_name,
+                                COALESCE(pv.unit, p.unit) AS unit, u.full_name AS recorded_by_name
+                                FROM damages d
                                 LEFT JOIN products p ON p.id = d.product_id
+                                LEFT JOIN product_variants pv ON pv.id = d.variant_id
                                 JOIN users u ON u.id = d.recorded_by
                                 $where ORDER BY d.damage_date DESC, d.id DESC LIMIT $limit");
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
     } catch (PDOException $e) {
-        if (strpos($e->getMessage(), 'item_type') !== false || strpos($e->getMessage(), 'item_name') !== false || strpos($e->getMessage(), 'manual_cost') !== false) {
+        try {
+            $stmt = $pdo->prepare("SELECT d.*, p.name AS product_name, p.unit AS unit, u.full_name AS recorded_by_name FROM damages d
+                                    LEFT JOIN products p ON p.id = d.product_id
+                                    JOIN users u ON u.id = d.recorded_by
+                                    $where ORDER BY d.damage_date DESC, d.id DESC LIMIT $limit");
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+        } catch (PDOException $e2) {
             respond(false, null, 'The database is missing the non-stock damage columns. Please run Backend/upgrade_v2_corrections.php once, then reload this page.', 500);
         }
-        respond(false, null, 'Could not load damages. Please try again.', 500);
     }
 
     // Normalise the "name" and "cost" shown regardless of item_type, so the
@@ -72,6 +69,7 @@ if ($method === 'POST') {
             if ($missing) respond(false, null, 'Missing fields: ' . implode(', ', $missing), 422);
 
             $productId = (int)$d['product_id'];
+            $variantId = !empty($d['variant_id']) ? (int)$d['variant_id'] : null;
             $qty = (int)$d['quantity'];
             if ($qty <= 0) respond(false, null, 'Enter a valid quantity.', 422);
 
@@ -80,20 +78,44 @@ if ($method === 'POST') {
             $product = $stmt->fetch();
             if (!$product) respond(false, null, 'Product not found.', 404);
 
-            $lossValue = round($qty * (float)$product['buying_price'], 2);
+            // A product with types can't have damage recorded against
+            // itself - a specific type must be given, and that type's own
+            // buying price/stock are what's used.
+            $variant = null;
+            if (!$product['is_service']) {
+                $vCountStmt = $pdo->prepare('SELECT COUNT(*) FROM product_variants WHERE product_id = ?');
+                $vCountStmt->execute([$productId]);
+                $hasVariants = (int)$vCountStmt->fetchColumn() > 0;
+
+                if ($hasVariants) {
+                    if (!$variantId) respond(false, null, 'Please select a type for "' . $product['name'] . '".', 422);
+                    $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?');
+                    $vStmt->execute([$variantId, $productId]);
+                    $variant = $vStmt->fetch();
+                    if (!$variant) respond(false, null, 'That type of "' . $product['name'] . '" no longer exists.', 404);
+                }
+            }
+
+            $label = $variant ? ($product['name'] . ' — ' . $variant['variant_name']) : $product['name'];
+            $buyingPrice = (float)($variant ? $variant['buying_price'] : $product['buying_price']);
+            $lossValue = round($qty * $buyingPrice, 2);
 
             $pdo->beginTransaction();
-            $ins = $pdo->prepare('INSERT INTO damages (product_id, item_type, item_name, quantity, reason, loss_value, manual_cost, recorded_by, damage_date, created_at)
-                                   VALUES (?,?,?,?,?,?,?,?,?,NOW())');
-            $ins->execute([$productId, 'product', null, $qty, clean($d['reason']), $lossValue, null, $user['id'], $damageDate]);
+            $ins = $pdo->prepare('INSERT INTO damages (product_id, variant_id, item_type, item_name, quantity, reason, loss_value, manual_cost, recorded_by, damage_date, created_at)
+                                   VALUES (?,?,?,?,?,?,?,?,?,?,NOW())');
+            $ins->execute([$productId, $variant ? $variantId : null, 'product', null, $qty, clean($d['reason']), $lossValue, null, $user['id'], $damageDate]);
 
             if (!$product['is_service']) {
-                $pdo->prepare('UPDATE products SET stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE id = ?')->execute([$qty, $productId]);
+                if ($variant) {
+                    $pdo->prepare('UPDATE product_variants SET stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE id = ?')->execute([$qty, $variantId]);
+                } else {
+                    $pdo->prepare('UPDATE products SET stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE id = ?')->execute([$qty, $productId]);
+                }
             }
             $pdo->commit();
 
             log_activity($pdo, $user, 'create', 'damage', $pdo->lastInsertId(),
-                'Recorded damage: ' . $qty . ' ' . $product['unit'] . ' x "' . $product['name'] . '" - loss TZS ' . number_format($lossValue) . ' (' . clean($d['reason']) . ')');
+                'Recorded damage: ' . $qty . ' ' . ($variant ? $variant['unit'] : $product['unit']) . ' x "' . $label . '" - loss TZS ' . number_format($lossValue) . ' (' . clean($d['reason']) . ')');
 
             respond(true, ['id' => $pdo->lastInsertId(), 'loss_value' => $lossValue], 'Damage/waste recorded and stock adjusted.');
         } else {
@@ -107,8 +129,8 @@ if ($method === 'POST') {
             if ($cost < 0) respond(false, null, 'Enter a valid cost.', 422);
 
             $pdo->beginTransaction();
-            $ins = $pdo->prepare('INSERT INTO damages (product_id, item_type, item_name, quantity, reason, loss_value, manual_cost, recorded_by, damage_date, created_at)
-                                   VALUES (NULL,?,?,NULL,?,?,?,?,?,NOW())');
+            $ins = $pdo->prepare('INSERT INTO damages (product_id, variant_id, item_type, item_name, quantity, reason, loss_value, manual_cost, recorded_by, damage_date, created_at)
+                                   VALUES (NULL,NULL,?,?,NULL,?,?,?,?,?,NOW())');
             $ins->execute(['other', $itemName, clean($d['reason']), $cost, $cost, $user['id'], $damageDate]);
             $pdo->commit();
 
@@ -119,6 +141,9 @@ if ($method === 'POST') {
         }
     } catch (PDOException $e) {
         if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+        if (strpos($e->getMessage(), 'variant_id') !== false) {
+            respond(false, null, 'The database is missing the "variant_id" column. Please run Backend/upgrade_add_variant_to_purchases_damages.php once, then try again.', 500);
+        }
         if (strpos($e->getMessage(), 'item_type') !== false || strpos($e->getMessage(), 'item_name') !== false || strpos($e->getMessage(), 'manual_cost') !== false || strpos($e->getMessage(), "doesn't have a default value") !== false) {
             respond(false, null, 'The database is missing the non-stock damage columns. Please run Backend/upgrade_v2_corrections.php once, then try again.', 500);
         }
@@ -141,8 +166,9 @@ if ($method === 'PUT') {
     if (!$existing) respond(false, null, 'Damage record not found.', 404);
 
     // Editing does not allow switching between a stock product and a
-    // non-stock item - that's a big enough change in meaning that it
-    // should be a delete + a fresh entry, not an "edit".
+    // non-stock item, or between one type and another - that's a big
+    // enough change in meaning that it should be a delete + a fresh
+    // entry, not an "edit". Only quantity/reason/date can change.
     $newDate = !empty($d['damage_date']) ? clean($d['damage_date']) : $existing['damage_date'];
     $newReason = clean($d['reason']);
 
@@ -158,7 +184,15 @@ if ($method === 'PUT') {
             $product = $pStmt->fetch();
             if (!$product) respond(false, null, 'The product this damage was recorded against no longer exists.', 404);
 
-            $newLossValue = round($newQty * (float)$product['buying_price'], 2);
+            $variant = null;
+            if (!empty($existing['variant_id'])) {
+                $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE id = ?');
+                $vStmt->execute([$existing['variant_id']]);
+                $variant = $vStmt->fetch();
+            }
+            $buyingPrice = (float)($variant ? $variant['buying_price'] : $product['buying_price']);
+
+            $newLossValue = round($newQty * $buyingPrice, 2);
             $qtyDelta = $newQty - (int)$existing['quantity']; // positive = MORE damaged than before
 
             $pdo->beginTransaction();
@@ -166,17 +200,23 @@ if ($method === 'PUT') {
                 ->execute([$newQty, $newReason, $newLossValue, $newDate, $existing['id']]);
             if (!$product['is_service'] && $qtyDelta != 0) {
                 // More damage now -> take more stock away. Less damage now -> give stock back.
-                $pdo->prepare('UPDATE products SET stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE id = ?')
-                    ->execute([$qtyDelta, $existing['product_id']]);
+                if ($variant) {
+                    $pdo->prepare('UPDATE product_variants SET stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE id = ?')
+                        ->execute([$qtyDelta, $variant['id']]);
+                } else {
+                    $pdo->prepare('UPDATE products SET stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE id = ?')
+                        ->execute([$qtyDelta, $existing['product_id']]);
+                }
             }
             $pdo->commit();
 
+            $label = $variant ? ($product['name'] . ' — ' . $variant['variant_name']) : $product['name'];
             $changes = [];
             if ((int)$existing['quantity'] != $newQty) $changes[] = 'quantity ' . $existing['quantity'] . ' to ' . $newQty . ' (loss ' . audit_money_diff($existing['loss_value'], $newLossValue) . ')';
             if ($existing['reason'] !== $newReason) $changes[] = 'reason "' . $existing['reason'] . '" to "' . $newReason . '"';
             if ($existing['damage_date'] !== $newDate) $changes[] = 'date ' . $existing['damage_date'] . ' to ' . $newDate;
             log_activity($pdo, $user, 'update', 'damage', $existing['id'],
-                'Edited damage record for "' . $product['name'] . '"' . ($changes ? ': ' . implode(', ', $changes) : ' (no changes)'));
+                'Edited damage record for "' . $label . '"' . ($changes ? ': ' . implode(', ', $changes) : ' (no changes)'));
 
             respond(true, null, 'Damage record updated and stock adjusted.');
         } else {
@@ -218,7 +258,11 @@ if ($method === 'DELETE') {
     // Deleting a damage record undoes its effect on stock - it's a
     // correction, not just a removal from the list.
     if ($row && $row['item_type'] === 'product' && !$row['is_service']) {
-        $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$row['quantity'], $row['product_id']]);
+        if (!empty($row['variant_id'])) {
+            $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$row['quantity'], $row['variant_id']]);
+        } else {
+            $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$row['quantity'], $row['product_id']]);
+        }
     }
     $pdo->commit();
 

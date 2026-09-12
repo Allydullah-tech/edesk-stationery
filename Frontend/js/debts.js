@@ -1,26 +1,20 @@
-/**
- * eDESK Print & Digital - Debts (Madeni) page logic
- * Shows every credit sale, its remaining balance, and lets a user
- * record a repayment against it. Profit is never affected here - a
- * credit sale already counted fully in profit at the time it was sold.
- */
 let DEBTS_CACHE = [];
 
 (async function init() {
-  await requireAuth();
-  document.getElementById('pay-date').value = todayStr();
-  document.getElementById('print-date-debts').textContent = 'Generated ' + new Date().toLocaleString('en-GB');
-  await loadDebts();
+    await requireAuth();
+    document.getElementById('pay-date').value = todayStr();
+    document.getElementById('print-date-debts').textContent = new Date().toLocaleString('en-GB');
+    await loadDebts();
 })();
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 /** Format a Date as YYYY-MM-DD using LOCAL time (not UTC, unlike toISOString). */
 function toLocalISODate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
 }
 
 /**
@@ -29,83 +23,86 @@ function toLocalISODate(d) {
  * Monday -> Sunday of the current week.
  */
 function debtsPeriodRange(period) {
-  const now = new Date();
-  let start, end;
+    const now = new Date();
+    let start, end;
 
-  if (period === 'week') {
-    const day = now.getDay(); // 0 = Sunday ... 6 = Saturday
-    const mondayOffset = (day === 0) ? -6 : 1 - day;
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
-    end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
-  } else if (period === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
-    end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  } else if (period === 'year') {
-    start = new Date(now.getFullYear(), 0, 1);
-    end = new Date(now.getFullYear(), 11, 31);
-  } else {
-    return null;
-  }
+    if (period === 'week') {
+        const day = now.getDay(); // 0 = Sunday ... 6 = Saturday
+        const mondayOffset = (day === 0) ? -6 : 1 - day;
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+        end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    } else if (period === 'month') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (period === 'year') {
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31);
+    } else {
+        return null;
+    }
 
-  return { start: toLocalISODate(start), end: toLocalISODate(end) };
+    return { start: toLocalISODate(start), end: toLocalISODate(end) };
 }
 
 async function loadDebts() {
-  const tbody = document.getElementById('debtsBody');
-  tbody.innerHTML = '<tr><td colspan="9" class="muted">Loading...</td></tr>';
+    const tbody = document.getElementById('debtsBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="muted">Loading...</td></tr>';
 
-  const params = {};
-  const status = document.getElementById('statusFilter').value;
-  if (status) params.status = status;
+    const params = {};
+    const status = document.getElementById('statusFilter').value;
+    if (status) params.status = status;
 
-  const rangeHint = document.getElementById('debtsRangeHint');
-  const period = document.getElementById('periodFilter').value;
+    const rangeHint = document.getElementById('debtsRangeHint');
+    const period = document.getElementById('periodFilter').value;
 
-  if (period === 'custom') {
-    const start = document.getElementById('debtsStartDate').value;
-    const end = document.getElementById('debtsEndDate').value;
-    if (start) params.start = start;
-    if (end) params.end = end;
-    rangeHint.textContent = (start || end)
-      ? `Showing debts from ${start ? fmtDate(start) : 'the beginning'} to ${end ? fmtDate(end) : 'today'}.`
-      : 'Pick a start and/or end date for the custom range.';
-  } else if (period) {
-    const range = debtsPeriodRange(period);
-    params.start = range.start;
-    params.end = range.end;
-    rangeHint.textContent = `Showing debts from ${fmtDate(range.start)} to ${fmtDate(range.end)}.`;
-  } else {
-    rangeHint.textContent = 'Showing debts from all time.';
-  }
-
-  const res = await API.get('debts.php', params);
-  if (!res.success) { tbody.innerHTML = `<tr><td colspan="9" class="muted">${res.message}</td></tr>`; return; }
-
-  DEBTS_CACHE = res.data;
-
-  let outstanding = 0, overdue = 0, openCount = 0, totalOwed = 0;
-  res.data.forEach(d => {
-    totalOwed += Number(d.total_amount);
-    if (d.status !== 'paid') {
-      outstanding += Number(d.remaining);
-      openCount++;
-      if (d.status === 'overdue') overdue += Number(d.remaining);
+    if (period === 'custom') {
+        const start = document.getElementById('debtsStartDate').value;
+        const end = document.getElementById('debtsEndDate').value;
+        if (start) params.start = start;
+        if (end) params.end = end;
+        rangeHint.textContent = (start || end) ?
+            `Showing debts from ${start ? fmtDate(start) : 'the beginning'} to ${end ? fmtDate(end) : 'today'}.` :
+            'Pick a start and/or end date for the custom range.';
+    } else if (period) {
+        const range = debtsPeriodRange(period);
+        params.start = range.start;
+        params.end = range.end;
+        rangeHint.textContent = `Showing debts from ${fmtDate(range.start)} to ${fmtDate(range.end)}.`;
+    } else {
+        rangeHint.textContent = 'Showing debts from all time.';
     }
-  });
-  document.getElementById('d-outstanding').textContent = money(outstanding);
-  document.getElementById('d-overdue').textContent = money(overdue);
-  document.getElementById('d-count').textContent = openCount;
-  document.getElementById('d-outstanding-print').textContent = money(outstanding);
-  document.getElementById('d-overdue-print').textContent = money(overdue);
-  document.getElementById('d-count-print').textContent = openCount;
 
-  if (!res.data.length) { tbody.innerHTML = '<tr><td colspan="9" class="muted">No credit sales found.</td></tr>'; return; }
+    const res = await API.get('debts.php', params);
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="9" class="muted">${res.message}</td></tr>`; return; }
 
-  tbody.innerHTML = res.data.map(d => {
-    const isOverdue = d.status === 'overdue';
-    const rowStyle = isOverdue ? ' style="background:#FEF6F5;"' : '';
-    const remainingClass = d.status === 'paid' ? 'muted' : (isOverdue ? 'red' : 'gold');
-    const customerCell = `<a href="customers.html?q=${encodeURIComponent(d.customer_phone || d.customer_name || '')}" style="color:inherit;text-decoration:none;">${d.customer_name || '—'}${d.customer_phone ? `<br><span class="muted" style="font-size:11.5px;">${d.customer_phone}</span>` : ''}</a>`;
+    DEBTS_CACHE = res.data;
+
+    let outstanding = 0,
+        overdue = 0,
+        openCount = 0,
+        totalOwed = 0;
+    res.data.forEach(d => {
+        totalOwed += Number(d.total_amount);
+        if (d.status !== 'paid') {
+            outstanding += Number(d.remaining);
+            openCount++;
+            if (d.status === 'overdue') overdue += Number(d.remaining);
+        }
+    });
+    document.getElementById('d-outstanding').textContent = money(outstanding);
+    document.getElementById('d-overdue').textContent = money(overdue);
+    document.getElementById('d-count').textContent = openCount;
+    document.getElementById('d-outstanding-print').textContent = money(outstanding);
+    document.getElementById('d-overdue-print').textContent = money(overdue);
+    document.getElementById('d-count-print').textContent = openCount;
+
+    if (!res.data.length) { tbody.innerHTML = '<tr><td colspan="9" class="muted">No credit sales found.</td></tr>'; return; }
+
+    tbody.innerHTML = res.data.map(d => {
+                const isOverdue = d.status === 'overdue';
+                const rowStyle = isOverdue ? ' style="background:#FEF6F5;"' : '';
+                const remainingClass = d.status === 'paid' ? 'muted' : (isOverdue ? 'red' : 'gold');
+                const customerCell = `<a href="customers.html?q=${encodeURIComponent(d.customer_phone || d.customer_name || '')}" style="color:inherit;text-decoration:none;">${d.customer_name || '—'}${d.customer_phone ? `<br><span class="muted" style="font-size:11.5px;">${d.customer_phone}</span>` : ''}</a>`;
     return `
     <tr${rowStyle}>
       <td>${fmtDate(d.sale_date)}</td>

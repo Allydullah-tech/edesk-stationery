@@ -1,9 +1,3 @@
-/**
- * eDESK Print & Digital - Sale receipt
- * One receipt per transaction, listing every item in it.
- * A customer who bought 3 products in one visit gets ONE receipt.
- */
-
 (async function init() {
     await requireAuth();
 

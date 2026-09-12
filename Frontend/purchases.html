@@ -15,13 +15,7 @@
     <div class="app-shell">
 
         <aside class="sidebar no-print">
-            <div class="brand">
-                <img src="assets/logo.png" alt="eDESK">
-                <div>
-                    <div class="t1">eDESK</div>
-                    <div class="t2">Print &amp; Digital</div>
-                </div>
-            </div>
+            <div class="brand"><img src="assets/hero-logo.png" alt="eDESK"> </div>
             <div class="nav-group">
                 <div class="nav-label">Overview</div>
                 <a href="dashboard.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a></div>
@@ -88,7 +82,7 @@
                     <div class="card" id="singleModeCard">
                         <div class="card-title">Add a Purchased Product</div>
                         <p class="help-text mt-8" style="margin-bottom:12px;">
-                            If the product name already exists in Stock, its quantity will simply be topped up. If it's new, it will be created automatically.
+                            If the product name already exists in stock, its quantity will be updated automatically. If it is a new product, a new stock record has to be created first.
                         </p>
 
                         <form id="singleForm">
@@ -97,6 +91,13 @@
                                 <input type="text" id="sp-name" placeholder="Type an existing product name, or a new one..." autocomplete="off" required>
                                 <div id="sp-suggestions" class="autocomplete-list hidden"></div>
                                 <p class="help-text" id="sp-match-hint"></p>
+                            </div>
+
+                            <div class="field hidden" id="sp-variant-field">
+                                <label>Type</label>
+                                <input type="text" id="sp-variant-name" list="sp-variant-datalist" placeholder="e.g. Obama Pen" autocomplete="off">
+                                <datalist id="sp-variant-datalist"></datalist>
+                                <p class="help-text" id="sp-variant-hint"></p>
                             </div>
 
                             <div class="field-row">
@@ -142,7 +143,7 @@
                         <div class="card-title">Import Products from a File</div>
                         <p class="help-text mt-8" style="margin-bottom:12px;">
                             Upload the Excel (.xlsx) or CSV file your supplier sent you. We'll try to match columns like
-                            <strong>Product / Name</strong>, <strong>Quantity</strong>, <strong>Buying Price</strong> and <strong>Selling Price</strong> automatically. You'll get a chance to review and fix anything before it's saved.
+                            <strong>Product / Name</strong>, <strong>Type / Variant</strong>, <strong>Quantity</strong>, <strong>Buying Price</strong> and <strong>Selling Price</strong> automatically. You'll get a chance to review and fix anything before it's saved.
                         </p>
 
                         <div class="field">
@@ -157,11 +158,13 @@
                                 <div class="card-title" style="margin:0;">Review Before Saving</div>
                                 <button type="button" class="btn btn-outline btn-sm" onclick="addBlankImportRow()">+ Add Row</button>
                             </div>
+                            <p class="help-text" style="margin:-4px 0 10px;">Only fill in the "Type" column for a row whose product already has types (e.g. "Pen") - leave it blank for a plain product.</p>
                             <div class="table-wrap">
                                 <table>
                                     <thead>
                                         <tr>
                                             <th style="min-width:170px;">Product Name</th>
+                                            <th style="min-width:130px;">Type</th>
                                             <th style="min-width:80px;">Unit</th>
                                             <th style="min-width:90px;">Quantity</th>
                                             <th style="min-width:110px;">Buying Price</th>
@@ -186,12 +189,18 @@
 
                 <!-- ===================== Recent purchases ===================== -->
                 <div class="print-header">
-                    <img src="assets/logo.png" alt="eDESK">
-                    <div class="doc-brand-name">eDESK</div>
-                    <div class="doc-brand-tagline">Print &amp; Digital</div>
-                    <div class="doc-brand-address">Mbeya, Iyunga (Moja One) &middot; +255 763 399 399</div>
-                    <h2 id="purchasesReportTitle">Purchases Report</h2>
-                    <div class="meta" id="print-date-purchases"></div>
+                    <div class="ph-top">
+                        <img src="assets/logo1.png" alt="eDESK">
+                        <div class="ph-brand">
+                            <div class="doc-brand-name">eDesk<span>PRINT &amp; DIGITAL</span></div>
+                            <div class="doc-brand-tagline">Print. Apply. Create.</div>
+                            <div class="doc-brand-address">Iyunga, Mbeya &nbsp;|&nbsp; Tel: +255 763 399 399</div>
+                        </div>
+                    </div>
+                    <div class="ph-bottom">
+                        <div class="ph-report-of">REPORT: <strong id="purchasesReportTitle">Purchases</strong></div>
+                        <div class="meta" id="print-date-purchases"></div>
+                    </div>
                 </div>
 
                 <div class="card mt-24">

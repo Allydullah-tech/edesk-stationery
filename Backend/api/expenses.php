@@ -1,13 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Expenses API
- * GET    -> list expenses (filter ?start=&end=)
- * POST   -> record new expense (admin + worker)
- * PUT    -> edit an existing expense (admin + worker - workers can
- *           correct their own mistakes; every edit is written to the
- *           activity log with the before/after values).
- * DELETE -> remove (admin + worker, logged) ?id=
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';

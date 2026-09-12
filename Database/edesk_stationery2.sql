@@ -1,10 +1,3 @@
--- =========================================================
--- EDESK STATIONERY - Business Management System
--- Database Schema
--- =========================================================
--- This file is executed automatically by Backend/install.php
--- You do not need to import it manually unless you prefer to.
--- =========================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 

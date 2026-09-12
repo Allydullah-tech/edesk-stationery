@@ -1,12 +1,4 @@
 <?php
-/**
- * EDESK STATIONERY - Forgot Password (2-step, via security question)
- *
- * step 1: POST { step: "find", username }
- *         -> returns the security_question (not the answer)
- * step 2: POST { step: "reset", username, security_answer, new_password }
- *         -> verifies answer, sets new password
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 

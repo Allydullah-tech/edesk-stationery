@@ -1,35 +1,4 @@
 <?php
-/**
- * eDESK Print & Digital - Sales (Mauzo) API
- *
- * A "sale" is a TRANSACTION that can hold one or more products/services
- * (sale_transactions + sale_items) - not one row per product like the
- * old version of this file. See Backend/upgrade_v4_sales_customers.php
- * for the migration that created this structure.
- *
- * GET    -> list transactions (filter by date range via ?start=&end=).
- *           ?id= returns one full transaction with its items, for the
- *           receipt/edit screens.
- * POST   -> record a new transaction. Body:
- *           { items: [{product_id, quantity, unit_price}, ...],
- *             customer_name, customer_phone, payment_method,
- *             cash_type, online_method, credit_deadline, sale_date, note }
- *           - Every item's profit is calculated the same way as before:
- *             products use (unit_price - buying_price) * qty, services
- *             count the full unit_price as profit.
- *           - Rejected if any item's unit_price is below that item's
- *             minimum_price.
- *           - A credit sale for a RESTRICTED customer is blocked - see
- *             Backend/helpers/customer_helper.php.
- * PUT    -> edit an existing transaction (admin + worker). Replaces the
- *           whole item list: stock for the old items is restored, then
- *           stock for the new items is deducted - this is simpler and
- *           safer to get right than trying to diff old vs new items
- *           line-by-line, at the cost of being an "all items replaced"
- *           edit rather than a partial one.
- * DELETE -> remove a transaction (admin + worker), restoring stock for
- *           every item it contained.
- */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
@@ -40,8 +9,9 @@ $pdo = get_db();
 $method = $_SERVER['REQUEST_METHOD'];
 
 /**
- * Validate and price one cart line against the products table. Returns
- * the enriched item array, or calls respond() (which exits) on failure.
+ * Validate and price one cart line against the products/product_variants
+ * tables. Returns the enriched item array, or calls respond() (which
+ * exits) on failure.
  */
 function prepare_sale_item(PDO $pdo, array $raw): array
 {
@@ -49,6 +19,7 @@ function prepare_sale_item(PDO $pdo, array $raw): array
         respond(false, null, 'Each item needs a product, quantity, and unit price.', 422);
     }
     $productId = (int)$raw['product_id'];
+    $variantId = !empty($raw['variant_id']) ? (int)$raw['variant_id'] : null;
     $qty = (int)$raw['quantity'];
     $unitPrice = (float)$raw['unit_price'];
     if ($qty <= 0 || $unitPrice < 0) respond(false, null, 'Enter a valid quantity and price for every item.', 422);
@@ -58,20 +29,44 @@ function prepare_sale_item(PDO $pdo, array $raw): array
     $product = $stmt->fetch();
     if (!$product) respond(false, null, 'One of the items in this sale no longer exists.', 404);
 
-    if (!empty($product['minimum_price']) && $unitPrice < (float)$product['minimum_price']) {
-        respond(false, null, 'That price is below the minimum allowed selling price of TZS ' . number_format((float)$product['minimum_price']) . ' for "' . $product['name'] . '".', 422);
-    }
-    if (!$product['is_service'] && (int)$product['stock_quantity'] < $qty) {
-        respond(false, null, 'Not enough stock for "' . $product['name'] . '". Only ' . $product['stock_quantity'] . ' ' . $product['unit'] . ' left.', 422);
+    // A product with types cannot be sold as itself - a specific type
+    // must be selected, and that type's own price/stock are used
+    // instead of the parent product's.
+    $variant = null;
+    if (!$product['is_service']) {
+        $countStmt = $pdo->prepare('SELECT COUNT(*) FROM product_variants WHERE product_id = ?');
+        $countStmt->execute([$productId]);
+        $hasVariants = (int)$countStmt->fetchColumn() > 0;
+
+        if ($hasVariants) {
+            if (!$variantId) respond(false, null, 'Please select a type for "' . $product['name'] . '".', 422);
+            $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?');
+            $vStmt->execute([$variantId, $productId]);
+            $variant = $vStmt->fetch();
+            if (!$variant) respond(false, null, 'That type of "' . $product['name'] . '" no longer exists.', 404);
+        }
     }
 
-    $buyingPrice = $product['is_service'] ? 0.0 : (float)$product['buying_price'];
+    $label = $variant ? ($product['name'] . ' — ' . $variant['variant_name']) : $product['name'];
+    $minimumPrice = $variant ? $variant['minimum_price'] : $product['minimum_price'];
+    $stockAvailable = (int)($variant ? $variant['stock_quantity'] : $product['stock_quantity']);
+    $unit = $variant ? $variant['unit'] : $product['unit'];
+    $buyingPrice = $product['is_service'] ? 0.0 : (float)($variant ? $variant['buying_price'] : $product['buying_price']);
+
+    if (!empty($minimumPrice) && $unitPrice < (float)$minimumPrice) {
+        respond(false, null, 'That price is below the minimum allowed selling price of TZS ' . number_format((float)$minimumPrice) . ' for "' . $label . '".', 422);
+    }
+    if (!$product['is_service'] && $stockAvailable < $qty) {
+        respond(false, null, 'Not enough stock for "' . $label . '". Only ' . $stockAvailable . ' ' . $unit . ' left.', 422);
+    }
+
     $subtotal = round($qty * $unitPrice, 2);
     $profit = round(($unitPrice - $buyingPrice) * $qty, 2);
 
     return [
-        'product' => $product, 'product_id' => $productId, 'quantity' => $qty,
-        'unit_price' => $unitPrice, 'buying_price' => $buyingPrice, 'subtotal' => $subtotal, 'profit' => $profit,
+        'product' => $product, 'variant' => $variant, 'product_id' => $productId, 'variant_id' => $variant ? $variantId : null,
+        'quantity' => $qty, 'unit_price' => $unitPrice, 'buying_price' => $buyingPrice, 'subtotal' => $subtotal, 'profit' => $profit,
+        'label' => $label, 'unit' => $unit,
     ];
 }
 
@@ -83,8 +78,14 @@ if ($method === 'GET') {
         $txn = $stmt->fetch();
         if (!$txn) respond(false, null, 'Sale not found.', 404);
 
-        $itemsStmt = $pdo->prepare("SELECT si.*, p.name AS product_name, p.unit, p.is_service
-                                     FROM sale_items si JOIN products p ON p.id = si.product_id
+        // product_name/unit already fold in the type name (e.g. "Pen — Obama
+        // Pen") so the receipt and edit screens need no changes of their own.
+        $itemsStmt = $pdo->prepare("SELECT si.*,
+                                     CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, ' — ', pv.variant_name) ELSE p.name END AS product_name,
+                                     COALESCE(pv.unit, p.unit) AS unit, p.is_service
+                                     FROM sale_items si
+                                     JOIN products p ON p.id = si.product_id
+                                     LEFT JOIN product_variants pv ON pv.id = si.variant_id
                                      WHERE si.transaction_id = ? ORDER BY si.id ASC");
         $itemsStmt->execute([$txn['id']]);
         $txn['items'] = $itemsStmt->fetchAll();
@@ -100,11 +101,13 @@ if ($method === 'GET') {
 
     // One row per transaction, with an item summary (comma list of names
     // and a total item/qty count) built alongside it - so the Sales table
-    // can show "Notebook, Compass, Pen (3 items)" without a second query
-    // per row.
+    // can show "Notebook, Pen — Obama Pen (3 items)" without a second
+    // query per row.
     $stmt = $pdo->prepare("
         SELECT st.*, u.full_name AS sold_by_name,
-               (SELECT GROUP_CONCAT(p.name SEPARATOR ', ') FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.transaction_id = st.id) AS item_names,
+               (SELECT GROUP_CONCAT(CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, ' — ', pv.variant_name) ELSE p.name END SEPARATOR ', ')
+                FROM sale_items si JOIN products p ON p.id = si.product_id LEFT JOIN product_variants pv ON pv.id = si.variant_id
+                WHERE si.transaction_id = st.id) AS item_names,
                (SELECT COUNT(*) FROM sale_items si WHERE si.transaction_id = st.id) AS item_count,
                (SELECT SUM(si.quantity) FROM sale_items si WHERE si.transaction_id = st.id) AS total_quantity
         FROM sale_transactions st
@@ -163,11 +166,15 @@ if ($method === 'POST') {
         ]);
         $txnId = $pdo->lastInsertId();
 
-        $itemIns = $pdo->prepare('INSERT INTO sale_items (transaction_id, product_id, quantity, unit_price, buying_price, subtotal, profit) VALUES (?,?,?,?,?,?,?)');
+        $itemIns = $pdo->prepare('INSERT INTO sale_items (transaction_id, product_id, variant_id, quantity, unit_price, buying_price, subtotal, profit) VALUES (?,?,?,?,?,?,?,?)');
         foreach ($items as $item) {
-            $itemIns->execute([$txnId, $item['product_id'], $item['quantity'], $item['unit_price'], $item['buying_price'], $item['subtotal'], $item['profit']]);
+            $itemIns->execute([$txnId, $item['product_id'], $item['variant_id'], $item['quantity'], $item['unit_price'], $item['buying_price'], $item['subtotal'], $item['profit']]);
             if (!$item['product']['is_service']) {
-                $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$item['quantity'], $item['product_id']]);
+                if ($item['variant_id']) {
+                    $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$item['quantity'], $item['variant_id']]);
+                } else {
+                    $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$item['quantity'], $item['product_id']]);
+                }
             }
         }
 
@@ -180,8 +187,8 @@ if ($method === 'POST') {
     if ($paymentMethod === 'credit') refresh_customer_restriction($pdo, $customerId);
 
     $itemSummary = count($items) === 1
-        ? '1 ' . $items[0]['product']['unit'] . ' x "' . $items[0]['product']['name'] . '"'
-        : count($items) . ' item(s) (' . implode(', ', array_map(fn($i) => $i['product']['name'], $items)) . ')';
+        ? '1 ' . $items[0]['unit'] . ' x "' . $items[0]['label'] . '"'
+        : count($items) . ' item(s) (' . implode(', ', array_map(fn($i) => $i['label'], $items)) . ')';
     log_activity($pdo, $user, 'create', 'sale', $txnId,
         'Recorded a ' . $paymentMethod . ' sale: ' . $itemSummary . ' for TZS ' . number_format($totalAmount)
         . ($customerName !== '' ? ' to ' . $customerName : ''));
@@ -229,20 +236,38 @@ if ($method === 'PUT') {
         $pdo->beginTransaction();
 
         // Restore stock for every old item, then delete them.
+        //
+        // NOTE - fixed a pre-existing bug here: the old code checked
+        // `if (!$p->fetchColumn())` against the product's `is_service`
+        // value to detect "product deleted since". Since is_service is 0
+        // for a normal product, and the string "0" is falsy in PHP, that
+        // check skipped the stock restore for every real product, every
+        // time a sale was edited - old stock was never given back before
+        // the new items were deducted. Checking `id` instead (never 0)
+        // fixes it. This is unrelated to the types/variants feature but
+        // was directly in the code being changed here.
         foreach ($oldItems as $old) {
-            $p = $pdo->prepare('SELECT is_service FROM products WHERE id = ?');
-            $p->execute([$old['product_id']]);
-            if (!$p->fetchColumn()) continue; // product deleted since - nothing to restore
-            $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$old['quantity'], $old['product_id']]);
+            if (!empty($old['variant_id'])) {
+                $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$old['quantity'], $old['variant_id']]);
+            } else {
+                $p = $pdo->prepare('SELECT id FROM products WHERE id = ?');
+                $p->execute([$old['product_id']]);
+                if (!$p->fetchColumn()) continue; // product deleted since - nothing to restore
+                $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$old['quantity'], $old['product_id']]);
+            }
         }
         $pdo->prepare('DELETE FROM sale_items WHERE transaction_id = ?')->execute([$txnId]);
 
         // Insert the new item set and deduct their stock.
-        $itemIns = $pdo->prepare('INSERT INTO sale_items (transaction_id, product_id, quantity, unit_price, buying_price, subtotal, profit) VALUES (?,?,?,?,?,?,?)');
+        $itemIns = $pdo->prepare('INSERT INTO sale_items (transaction_id, product_id, variant_id, quantity, unit_price, buying_price, subtotal, profit) VALUES (?,?,?,?,?,?,?,?)');
         foreach ($items as $item) {
-            $itemIns->execute([$txnId, $item['product_id'], $item['quantity'], $item['unit_price'], $item['buying_price'], $item['subtotal'], $item['profit']]);
+            $itemIns->execute([$txnId, $item['product_id'], $item['variant_id'], $item['quantity'], $item['unit_price'], $item['buying_price'], $item['subtotal'], $item['profit']]);
             if (!$item['product']['is_service']) {
-                $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$item['quantity'], $item['product_id']]);
+                if ($item['variant_id']) {
+                    $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$item['quantity'], $item['variant_id']]);
+                } else {
+                    $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$item['quantity'], $item['product_id']]);
+                }
             }
         }
 
@@ -280,14 +305,24 @@ if ($method === 'DELETE') {
     $txn = $stmt->fetch();
     if (!$txn) respond(false, null, 'Sale not found.', 404);
 
-    $itemsStmt = $pdo->prepare("SELECT si.*, p.name, p.is_service FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.transaction_id = ?");
+    $itemsStmt = $pdo->prepare("SELECT si.*,
+                                 CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, ' — ', pv.variant_name) ELSE p.name END AS name,
+                                 p.is_service
+                                 FROM sale_items si
+                                 JOIN products p ON p.id = si.product_id
+                                 LEFT JOIN product_variants pv ON pv.id = si.variant_id
+                                 WHERE si.transaction_id = ?");
     $itemsStmt->execute([$id]);
     $items = $itemsStmt->fetchAll();
 
     $pdo->beginTransaction();
     foreach ($items as $item) {
         if (!$item['is_service']) {
-            $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$item['quantity'], $item['product_id']]);
+            if (!empty($item['variant_id'])) {
+                $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$item['quantity'], $item['variant_id']]);
+            } else {
+                $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$item['quantity'], $item['product_id']]);
+            }
         }
     }
     $pdo->prepare('DELETE FROM sale_transactions WHERE id = ?')->execute([$id]); // cascades to sale_items and debt_payments
