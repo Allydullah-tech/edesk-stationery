@@ -84,10 +84,8 @@
                     </div>
                 </div>
                 <p class="help-text no-print" style="margin-bottom:12px;">
-                    Use "+ Add Item" for a quick, direct addition when needed. For normal stock intake, the
-                    <a href="purchases.html" class="gold">Purchases</a> page is the recommended way in. A product
-                    with several types (e.g. "Pen" with Obama Pen, Marker Pen, etc) can be set up from the
-                    "Types" column below, instead of adding each type as its own separate product.
+                    Use "+ Add Item" for quick additions, or <a href="purchases.html" class="gold">Purchases</a> for normal stock intake.
+                    Each product requires at least one description (e.g. "Rim Paper A4"), with more addable anytime via the "Description" column.
                 </p>
                 <div class="card">
                     <div class="filter-bar mt-8 no-print" style="margin-bottom:14px;">
@@ -103,12 +101,12 @@
                                 <tr>
                                     <th>Name</th>
                                     <th>Category</th>
+                                    <th class="no-print">Description</th>
                                     <th>Buying Price</th>
-                                    <th>Minimum Selling Price</th>
+                                    <th>Min. Selling Price</th>
                                     <th>Selling Price</th>
                                     <th>Unit</th>
                                     <th>Quantity</th>
-                                    <th class="no-print">Types</th>
                                     <th class="no-print">Status</th>
                                     <th class="admin-only no-print">Actions</th>
                                 </tr>
@@ -145,7 +143,7 @@
 
     <!-- Add / Edit Product Modal -->
     <div class="modal-overlay" id="productModal">
-        <div class="modal">
+        <div class="modal modal-lg">
             <div class="modal-head">
                 <h3 id="productModalTitle">Add Product</h3>
                 <button class="modal-close" onclick="closeModal('productModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
@@ -161,44 +159,24 @@
                         <label>Category</label>
                         <input type="text" id="p-category" placeholder="e.g. Paper, Printing">
                     </div>
-                    <div class="field">
-                        <label id="p-buying-label">Buying Price (TZS)</label>
-                        <input type="number" id="p-buying" min="0" step="0.01">
-                        <p class="help-text" id="p-buying-hint">Required for products.</p>
-                    </div>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>Minimum Selling Price (TZS) — optional</label>
-                            <input type="number" id="p-minimum" min="0" step="0.01">
-                            <p class="help-text">A sale can never be recorded below this price. Leave blank for no floor.</p>
-                        </div>
-                        <div class="field">
-                            <label>Selling Price (TZS)</label>
-                            <input type="number" id="p-selling" min="0" step="0.01" required>
-                        </div>
-                    </div>
-                    <div class="field">
-                        <label>Unit</label>
-                        <input type="text" id="p-unit" placeholder="pcs, rim, box, packet..." value="pcs">
-                    </div>
-                    <div class="field-row" id="stockFields">
-                        <div class="field">
-                            <label>Stock Quantity</label>
-                            <input type="number" id="p-stock" min="0" step="1" value="0">
-                        </div>
-                        <div class="field">
-                            <label>Reorder Alert Level</label>
-                            <input type="number" id="p-reorder" min="0" step="1" value="5">
-                        </div>
-                    </div>
                     <div class="field" id="statusField" style="display:none;">
                         <label>Status</label>
                         <select id="p-status"><option value="active">Active</option><option value="disabled">Disabled</option></select>
                         <p class="help-text">"Low" is shown automatically once stock falls below the Reorder Alert Level - it isn't set by hand.</p>
                     </div>
-                    <p class="help-text">If this item will have several types (e.g. "Pen" with Obama Pen, Marker Pen...), save it here first with any placeholder price, then use the "Types" column on the list to add each type with its own price and stock.</p>
+
+                    <!-- Descriptions / Variants builder - only shown when adding a brand-new item.
+                         For an existing item, use the "Description" column on the list instead. -->
+                    <div class="field" id="newVariantsSection">
+                        <label>Description</label>
+                        <p class="help-text">Add at least one description (e.g. "Rim Paper A4", or "Obama Pen", "Marker Pen" for a "Pen"). Price, unit and stock are set per description.</p>
+                        <div id="newVariantsList"></div>
+                        <button type="button" class="btn btn-outline btn-sm w-full" onclick="addNewVariantRow()">+ Add a Description</button>
+                    </div>
+
                     <button type="submit" class="btn btn-primary w-full mt-8">Save Item</button>
                 </form>
+                <datalist id="typeNameSuggestions"></datalist>
             </div>
         </div>
     </div>
@@ -221,11 +199,11 @@
         </div>
     </div>
 
-    <!-- Manage Types (variants) Modal -->
+    <!-- Manage Descriptions (variants) Modal -->
     <div class="modal-overlay" id="typesModal">
         <div class="modal modal-lg">
             <div class="modal-head">
-                <h3 id="typesModalTitle">Types</h3>
+                <h3 id="typesModalTitle">Description</h3>
                 <button class="modal-close" onclick="closeModal('typesModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
             </div>
             <div class="modal-body">
@@ -235,7 +213,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Type</th>
+                                <th>Description</th>
                                 <th>Buying Price</th>
                                 <th>Minimum Price</th>
                                 <th>Selling Price</th>
@@ -260,9 +238,9 @@
                 <form id="variantForm" class="admin-only mt-16">
                     <input type="hidden" id="v-id">
                     <input type="hidden" id="v-product-id">
-                    <h4 id="variantFormTitle" style="margin:0 0 8px;">+ Add Type</h4>
+                    <h4 id="variantFormTitle" style="margin:0 0 8px;">+ Add Description</h4>
                     <div class="field">
-                        <label>Type Name</label>
+                        <label>Description Name</label>
                         <input type="text" id="v-name" required placeholder="e.g. Obama Pen">
                     </div>
                     <div class="field-row">
@@ -300,7 +278,7 @@
                         <select id="v-status"><option value="active">Active</option><option value="disabled">Disabled</option></select>
                     </div>
                     <div class="flex gap-8">
-                        <button type="submit" class="btn btn-primary w-full mt-8" id="variantSubmitBtn">Add Type</button>
+                        <button type="submit" class="btn btn-primary w-full mt-8" id="variantSubmitBtn">Add Description</button>
                         <button type="button" class="btn btn-outline w-full mt-8 hidden" id="variantCancelBtn" onclick="resetVariantForm()">Cancel</button>
                     </div>
                 </form>

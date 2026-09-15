@@ -104,17 +104,13 @@ function renderReceipt(s) {
             <div class="center">
 
                 <img
-                    src="assets/logo.png"
+                    src="assets/logo1.png"
                     alt="eDESK Logo"
                     class="logo"
                 >
 
-                <div class="shop-name">
-                    eDESK
-                </div>
-
                 <div class="shop-tagline">
-                    PRINT &amp; DIGITAL
+                    Print. Create. Design.
                 </div>
 
                 <div class="shop-meta">

@@ -48,7 +48,8 @@ if ($method === 'GET') {
                 CASE WHEN v.variant_count > 0 THEN v.total_stock ELSE p.stock_quantity END AS stock_quantity,
                 v.min_buying, v.max_buying, v.min_selling, v.max_selling,
                 COALESCE(v.total_value, 0) AS variant_stock_value,
-                CASE WHEN v.low_variant_count > 0 THEN 1 ELSE 0 END AS has_low_variant
+                CASE WHEN v.low_variant_count > 0 THEN 1 ELSE 0 END AS has_low_variant,
+                v.variant_unit
             FROM products p
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN (
@@ -60,6 +61,7 @@ if ($method === 'GET') {
                        MAX(buying_price) AS max_buying,
                        MIN(selling_price) AS min_selling,
                        MAX(selling_price) AS max_selling,
+                       MIN(unit) AS variant_unit,
                        SUM(CASE WHEN status = 'active' AND stock_quantity <= reorder_level THEN 1 ELSE 0 END) AS low_variant_count
                 FROM product_variants
                 WHERE status = 'active'

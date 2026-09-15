@@ -222,6 +222,11 @@ tbody tr:hover{background:#FAFBFE;}
 .modal-body{padding:18px;}
 .modal-close{background:none;border:none;font-size:18px;color:var(--muted);line-height:1;}
 
+/* ---------- New item: inline Types / Variants builder ---------- */
+.new-variant-row{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 12px 0;margin-bottom:12px;position:relative;}
+.new-variant-row .field{margin-bottom:12px;}
+.new-variant-row .nv-remove-row{grid-template-columns:1fr auto;align-items:end;gap:8px;}
+
 /* ---------- Names-only quick-view modal polish ---------- */
 #quickNameForm{padding-bottom:14px;margin-bottom:14px !important;border-bottom:1px solid var(--line);}
 #quickNameForm input{margin:0;}

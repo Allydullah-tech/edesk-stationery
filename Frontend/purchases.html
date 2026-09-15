@@ -94,7 +94,7 @@
                             </div>
 
                             <div class="field hidden" id="sp-variant-field">
-                                <label>Type</label>
+                                <label>Description</label>
                                 <input type="text" id="sp-variant-name" list="sp-variant-datalist" placeholder="e.g. Obama Pen" autocomplete="off">
                                 <datalist id="sp-variant-datalist"></datalist>
                                 <p class="help-text" id="sp-variant-hint"></p>
@@ -143,8 +143,14 @@
                         <div class="card-title">Import Products from a File</div>
                         <p class="help-text mt-8" style="margin-bottom:12px;">
                             Upload the Excel (.xlsx) or CSV file your supplier sent you. We'll try to match columns like
-                            <strong>Product / Name</strong>, <strong>Type / Variant</strong>, <strong>Quantity</strong>, <strong>Buying Price</strong> and <strong>Selling Price</strong> automatically. You'll get a chance to review and fix anything before it's saved.
+                            <strong>Product / Name</strong>, <strong>Description / Variant</strong>, <strong>Quantity</strong>, <strong>Buying Price</strong> and <strong>Selling Price</strong> automatically. You'll get a chance to review and fix anything before it's saved.
                         </p>
+
+                        <div class="field">
+                            <label>Not sure of the format?</label>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="downloadImportTemplate()"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download Import Template</button>
+                            <p class="help-text">Grab this blank template (with an "Instructions" tab and two example rows), fill in your purchase list, then upload it back below.</p>
+                        </div>
 
                         <div class="field">
                             <label>Choose File</label>
@@ -158,13 +164,13 @@
                                 <div class="card-title" style="margin:0;">Review Before Saving</div>
                                 <button type="button" class="btn btn-outline btn-sm" onclick="addBlankImportRow()">+ Add Row</button>
                             </div>
-                            <p class="help-text" style="margin:-4px 0 10px;">Only fill in the "Type" column for a row whose product already has types (e.g. "Pen") - leave it blank for a plain product.</p>
+                            <p class="help-text" style="margin:-4px 0 10px;">Only fill in the "Description" column for a row whose product already has types (e.g. "Pen") - leave it blank for a plain product.</p>
                             <div class="table-wrap">
                                 <table>
                                     <thead>
                                         <tr>
                                             <th style="min-width:170px;">Product Name</th>
-                                            <th style="min-width:130px;">Type</th>
+                                            <th style="min-width:130px;">Description</th>
                                             <th style="min-width:80px;">Unit</th>
                                             <th style="min-width:90px;">Quantity</th>
                                             <th style="min-width:110px;">Buying Price</th>

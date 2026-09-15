@@ -1,11 +1,13 @@
 let PRODUCTS_CACHE = [];
 let CURRENT_TYPES_PRODUCT = null;
 let TYPES_CACHE = [];
+let NEW_VARIANT_SEQ = 0;
 
 (async function init() {
     await requireAuth();
     document.getElementById('print-date-products').textContent = new Date().toLocaleString('en-GB');
     await loadProducts();
+    loadTypeNameSuggestions();
 })();
 
 /**
@@ -93,20 +95,23 @@ async function loadProducts() {
             (Number(p.min_selling) === Number(p.max_selling) ? money(p.min_selling) : `${money(p.min_selling)} – ${money(p.max_selling)}`) :
             money(p.selling_price);
         const minCell = hasVariants ? '—' : minPrice;
-        const unitCell = hasVariants ? '<span class="muted">Multiple</span>' : p.unit;
-        const typesCell = hasVariants ?
-            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">${p.variant_count} type${Number(p.variant_count) === 1 ? '' : 's'} →</button>` :
-            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">+ Add types</button>`;
+        const unitCell = hasVariants ? (p.variant_unit || '—') : p.unit;
+        // "Description" column: doubles as the quick/emergency entry point for
+        // managing this product's types - same modal as before, just relocated
+        // and relabelled on the list.
+        const descriptionCell = hasVariants ?
+            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">${p.variant_count} description${Number(p.variant_count) === 1 ? '' : 's'} →</button>` :
+            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">+ Add descriptions</button>`;
 
         return `<tr>
       <td><strong>${p.name}</strong></td>
       <td>${p.category_name || '—'}</td>
+      <td class="no-print">${descriptionCell}</td>
       <td>${buyingCell}</td>
       <td>${minCell}</td>
       <td>${sellingCell}</td>
       <td>${unitCell}</td>
       <td>${p.stock_quantity}</td>
-      <td class="no-print">${typesCell}</td>
       <td class="no-print">${statusTag}</td>
       ${actions}
     </tr>`;
@@ -120,7 +125,17 @@ function openProductModal() {
     document.getElementById('p-id').value = '';
     document.getElementById('productModalTitle').textContent = PAGE_PRODUCT_TYPE === 1 ? 'Add Service' : 'Add Product';
     document.getElementById('statusField').style.display = 'none';
-    document.getElementById('p-unit').value = 'pcs';
+    // p-unit no longer exists on the Products page (it's on each type now) -
+    // still exists on the Services page, so guard it.
+    const unitField = document.getElementById('p-unit');
+    if (unitField) unitField.value = 'pcs';
+    resetNewVariantsList();
+    // Services can't have types (enforced server-side too) - only show the
+    // builder for the Products page. Every product must have at least one
+    // type, so start with one row ready to fill in.
+    const variantsSection = document.getElementById('newVariantsSection');
+    if (variantsSection) variantsSection.style.display = PAGE_PRODUCT_TYPE === 1 ? 'none' : 'block';
+    if (PAGE_PRODUCT_TYPE === 0) addNewVariantRow();
     openModal('productModal');
 }
 
@@ -131,30 +146,67 @@ function editProduct(id) {
     document.getElementById('p-id').value = p.id;
     document.getElementById('p-name').value = p.name;
     document.getElementById('p-category').value = p.category_name || '';
-    document.getElementById('p-buying').value = p.buying_price;
-    document.getElementById('p-selling').value = p.selling_price;
-    document.getElementById('p-minimum').value = p.minimum_price || '';
-    document.getElementById('p-stock').value = p.stock_quantity;
-    document.getElementById('p-reorder').value = p.reorder_level;
-    document.getElementById('p-unit').value = p.unit;
+    // Buying/selling/minimum/stock/reorder/unit only exist in the form for
+    // Services now - a product's own copies of these are unused once it's
+    // saved with types, so guard every one of them.
+    const buyingField = document.getElementById('p-buying');
+    if (buyingField) buyingField.value = p.buying_price;
+    const sellingField = document.getElementById('p-selling');
+    if (sellingField) sellingField.value = p.selling_price;
+    const minField = document.getElementById('p-minimum');
+    if (minField) minField.value = p.minimum_price || '';
+    const stockField = document.getElementById('p-stock');
+    if (stockField) stockField.value = p.stock_quantity;
+    const reorderField = document.getElementById('p-reorder');
+    if (reorderField) reorderField.value = p.reorder_level;
+    const unitField = document.getElementById('p-unit');
+    if (unitField) unitField.value = p.unit;
     document.getElementById('p-status').value = p.status;
     document.getElementById('statusField').style.display = 'block';
+    // Editing an existing item: types are managed from the "Description"
+    // column on the list instead, so the inline builder stays out of the way.
+    resetNewVariantsList();
+    const variantsSection = document.getElementById('newVariantsSection');
+    if (variantsSection) variantsSection.style.display = 'none';
     openModal('productModal');
 }
 
 document.getElementById('productForm').addEventListener('submit', async(e) => {
     e.preventDefault();
     const id = document.getElementById('p-id').value;
+
+    // Only a brand-new item can carry inline types from this form; for an
+    // existing item they're always added via the "Description" column.
+    let newVariants = [];
+    if (!id) {
+        try {
+            newVariants = collectNewVariants();
+        } catch (err) {
+            toast(err.message, 'error');
+            return;
+        }
+        // Products (not services) no longer carry their own price/unit/stock -
+        // every product is required to have at least one type.
+        if (PAGE_PRODUCT_TYPE === 0 && newVariants.length === 0) {
+            toast('Add at least one description before saving - every product needs at least one.', 'error');
+            return;
+        }
+    }
+
+    // p-buying/p-selling/p-minimum/p-stock/p-reorder/p-unit only exist in
+    // the form for Services now - a product's price/unit/stock live on its
+    // type(s) instead, so guard every one of them here.
+    const unitField = document.getElementById('p-unit');
     const payload = {
         name: document.getElementById('p-name').value.trim(),
         category_name: document.getElementById('p-category').value.trim(),
         is_service: PAGE_PRODUCT_TYPE,
-        buying_price: document.getElementById('p-buying').value,
-        selling_price: document.getElementById('p-selling').value,
-        minimum_price: document.getElementById('p-minimum').value,
-        stock_quantity: document.getElementById('p-stock').value,
-        reorder_level: document.getElementById('p-reorder').value,
-        unit: document.getElementById('p-unit').value.trim() || 'pcs',
+        buying_price: document.getElementById('p-buying') ? document.getElementById('p-buying').value : '',
+        selling_price: document.getElementById('p-selling') ? document.getElementById('p-selling').value : '',
+        minimum_price: document.getElementById('p-minimum') ? document.getElementById('p-minimum').value : '',
+        stock_quantity: document.getElementById('p-stock') ? document.getElementById('p-stock').value : '',
+        reorder_level: document.getElementById('p-reorder') ? document.getElementById('p-reorder').value : '',
+        unit: unitField ? (unitField.value.trim() || 'pcs') : 'pcs',
     };
 
     let res;
@@ -167,13 +219,32 @@ document.getElementById('productForm').addEventListener('submit', async(e) => {
     }
 
     if (!res.success) { toast(res.message, 'error'); return; }
-    toast(res.message);
+
+    if (!id && newVariants.length && res.data && res.data.id) {
+        const newProductId = res.data.id;
+        let added = 0;
+        const failures = [];
+        for (const v of newVariants) {
+            const vRes = await API.post('product_variants.php', { ...v, product_id: newProductId });
+            if (vRes.success) added++;
+            else failures.push(`${v.variant_name} (${vRes.message})`);
+        }
+        if (failures.length) {
+            toast(`${res.message} ${added} of ${newVariants.length} description(s) saved. Couldn't save: ${failures.join(', ')}`, added ? 'success' : 'error');
+        } else {
+            toast(`${res.message} ${added} description${added === 1 ? '' : 's'} added.`);
+        }
+        loadTypeNameSuggestions();
+    } else {
+        toast(res.message);
+    }
+
     closeModal('productModal');
     loadProducts();
 });
 
 async function deleteProduct(id) {
-    if (!confirm('Delete this item? This cannot be undone. Any types under it will be deleted too.')) return;
+    if (!confirm('Delete this item? This cannot be undone. Any descriptions under it will be deleted too.')) return;
     const res = await API.del('products.php', { id });
     if (!res.success) { toast(res.message, 'error'); return; }
     toast(res.message);
@@ -189,7 +260,7 @@ function downloadProductsExcel() {
             hasVariants ? `${p.min_buying}–${p.max_buying}` : p.buying_price,
             hasVariants ? '' : (p.minimum_price || ''),
             hasVariants ? `${p.min_selling}–${p.max_selling}` : p.selling_price,
-            isService ? '' : (hasVariants ? 'Multiple' : p.unit),
+            isService ? '' : (hasVariants ? (p.variant_unit || '') : p.unit),
             isService ? '' : p.stock_quantity,
             p.status === 'disabled' ?
             'Disabled' :
@@ -256,6 +327,106 @@ function renderNamesOnlyList() {
 }
 
 /* =========================================================
+   Inline Types / Variants builder - lives inside the Add Item form so a
+   product's types can be created (or picked from ones used before, via
+   the type-name suggestions) at the same time the product itself is
+   created. Guarded like quickNameForm/variantForm below: these elements
+   only exist in products.html, never in services.html.
+   ========================================================= */
+async function loadTypeNameSuggestions() {
+    const datalist = document.getElementById('typeNameSuggestions');
+    if (!datalist) return;
+    const res = await API.get('product_variants.php', { all_names: 1 });
+    if (!res.success || !Array.isArray(res.data)) return;
+    datalist.innerHTML = res.data.map(name => `<option value="${name}"></option>`).join('');
+}
+
+function resetNewVariantsList() {
+    const list = document.getElementById('newVariantsList');
+    if (list) list.innerHTML = '';
+}
+
+function addNewVariantRow() {
+    const list = document.getElementById('newVariantsList');
+    if (!list) return;
+    const rowId = 'nv' + (++NEW_VARIANT_SEQ);
+    list.insertAdjacentHTML('beforeend', `
+    <div class="new-variant-row" data-row-id="${rowId}">
+      <div class="field-row nv-remove-row">
+        <div class="field">
+          <label>Description Name</label>
+          <input type="text" class="nv-name" list="typeNameSuggestions" placeholder="e.g. Obama Pen (type or pick one)">
+        </div>
+        <button type="button" class="icon-action-btn delete-btn" title="Remove this description" onclick="removeNewVariantRow('${rowId}')">
+          <svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg>
+        </button>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Buying Price (TZS)</label>
+          <input type="number" class="nv-buying" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>Selling Price (TZS)</label>
+          <input type="number" class="nv-selling" min="0" step="0.01">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Minimum Price (TZS) — optional</label>
+          <input type="number" class="nv-minimum" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>Unit</label>
+          <input type="text" class="nv-unit" placeholder="pcs, box..." value="pcs">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Stock Quantity</label>
+          <input type="number" class="nv-stock" min="0" step="1" value="0">
+        </div>
+        <div class="field">
+          <label>Reorder Alert Level</label>
+          <input type="number" class="nv-reorder" min="0" step="1" value="5">
+        </div>
+      </div>
+    </div>`);
+}
+
+function removeNewVariantRow(rowId) {
+    const row = document.querySelector(`.new-variant-row[data-row-id="${rowId}"]`);
+    if (row) row.remove();
+}
+
+// Reads whichever type rows the admin actually filled in (a blank, untouched
+// row is ignored rather than rejected) and turns them into payloads ready
+// for product_variants.php. Throws with a friendly message if a named type
+// is missing the one thing product_variants.php requires beyond the name.
+function collectNewVariants() {
+    const rows = document.querySelectorAll('#newVariantsList .new-variant-row');
+    const variants = [];
+    for (const row of rows) {
+        const name = row.querySelector('.nv-name').value.trim();
+        if (!name) continue;
+        const selling = row.querySelector('.nv-selling').value;
+        if (selling === '') {
+            throw new Error(`"${name}" needs a Selling Price before it can be saved.`);
+        }
+        variants.push({
+            variant_name: name,
+            buying_price: row.querySelector('.nv-buying').value,
+            selling_price: selling,
+            minimum_price: row.querySelector('.nv-minimum').value,
+            unit: row.querySelector('.nv-unit').value.trim() || 'pcs',
+            stock_quantity: row.querySelector('.nv-stock').value,
+            reorder_level: row.querySelector('.nv-reorder').value,
+        });
+    }
+    return variants;
+}
+
+/* =========================================================
    Types (variants) modal - products.html only. Every element this
    code touches (typesModal, typesBody, variantForm, ...) only exists
    in products.html, never in services.html, and every entry point
@@ -267,9 +438,9 @@ async function openTypesModal(productId) {
     const p = PRODUCTS_CACHE.find(x => x.id == productId);
     if (!p) return;
     CURRENT_TYPES_PRODUCT = p;
-    document.getElementById('typesModalTitle').textContent = 'Types — ' + p.name;
+    document.getElementById('typesModalTitle').textContent = 'Descriptions — ' + p.name;
     document.getElementById('typesModalSubtitle').textContent =
-        '"' + p.name + '" is the group name. Each type below has its own price, unit, stock and reorder level, and is what gets sold and tracked individually.';
+        '"' + p.name + '" is the group name. Each description below has its own price, unit, stock and reorder level, and is what gets sold and tracked individually.';
     document.getElementById('v-product-id').value = p.id;
     resetVariantForm();
     await loadTypesList();
@@ -288,7 +459,7 @@ async function loadTypesList() {
 function renderTypesList() {
     const tbody = document.getElementById('typesBody');
     if (!TYPES_CACHE.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="muted">No types yet. Add the first one below.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="muted">No descriptions yet. Add the first one below.</td></tr>';
         document.getElementById('types-total-stock').textContent = '0';
         return;
     }
@@ -326,8 +497,8 @@ function resetVariantForm() {
     document.getElementById('v-unit').value = 'pcs';
     document.getElementById('v-reorder').value = 5;
     document.getElementById('v-stock').value = 0;
-    document.getElementById('variantFormTitle').textContent = '+ Add Type';
-    document.getElementById('variantSubmitBtn').textContent = 'Add Type';
+    document.getElementById('variantFormTitle').textContent = '+ Add Description';
+    document.getElementById('variantSubmitBtn').textContent = 'Add Description';
     document.getElementById('v-statusField').style.display = 'none';
     document.getElementById('variantCancelBtn').classList.add('hidden');
 }
@@ -344,8 +515,8 @@ function editVariant(id) {
     document.getElementById('v-stock').value = v.stock_quantity;
     document.getElementById('v-reorder').value = v.reorder_level;
     document.getElementById('v-status').value = v.status;
-    document.getElementById('variantFormTitle').textContent = 'Edit Type';
-    document.getElementById('variantSubmitBtn').textContent = 'Update Type';
+    document.getElementById('variantFormTitle').textContent = 'Edit Description';
+    document.getElementById('variantSubmitBtn').textContent = 'Update Description';
     document.getElementById('v-statusField').style.display = 'block';
     document.getElementById('variantCancelBtn').classList.remove('hidden');
     document.getElementById('v-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -388,7 +559,7 @@ if (variantForm) {
 }
 
 async function deleteVariant(id) {
-    if (!confirm('Delete this type? This cannot be undone.')) return;
+    if (!confirm('Delete this description? This cannot be undone.')) return;
     const res = await API.del('product_variants.php', { id });
     if (!res.success) { toast(res.message, 'error'); return; }
     toast(res.message);

@@ -93,7 +93,7 @@ function renderSuggestions(query) {
     <div class="autocomplete-item${i === 0 ? ' highlighted' : ''}" data-id="${p.id}">
       <span class="name">${p.name}</span>
       <span class="meta">${SALE_MODE === 'product'
-        ? (Number(p.variant_count) > 0 ? p.variant_count + ' type(s)' : p.stock_quantity + ' ' + p.unit + ' in stock')
+        ? (Number(p.variant_count) > 0 ? p.variant_count + ' description(s)' : p.stock_quantity + ' ' + p.unit + ' in stock')
         : money(p.selling_price)}</span>
     </div>`).join('');
 
@@ -123,21 +123,21 @@ async function selectProduct(id) {
     document.getElementById('s-product-suggestions').classList.add('hidden');
 
     if (SALE_MODE === 'product' && Number(p.variant_count) > 0) {
-        // This product has types - a specific one must be chosen before a
-        // price/quantity can be entered, since each type has its own.
+        // This product has descriptions - a specific one must be chosen before a
+        // price/quantity can be entered, since each description has its own.
         const typeField = document.getElementById('s-type-field');
         const typeSelect = document.getElementById('s-type-select');
         typeField.classList.remove('hidden');
-        typeSelect.innerHTML = '<option value="">Loading types...</option>';
+        typeSelect.innerHTML = '<option value="">Loading descriptions...</option>';
         document.getElementById('s-price').value = '';
 
         const res = await API.get('product_variants.php', { product_id: p.id });
         CURRENT_TYPE_OPTIONS = res.success ? res.data.filter(v => v.status === 'active') : [];
 
         if (!CURRENT_TYPE_OPTIONS.length) {
-            typeSelect.innerHTML = '<option value="">No active types available</option>';
+            typeSelect.innerHTML = '<option value="">No active descriptions available</option>';
         } else {
-            typeSelect.innerHTML = '<option value="">Select a type...</option>' +
+            typeSelect.innerHTML = '<option value="">Select a description...</option>' +
                 CURRENT_TYPE_OPTIONS.map(v => `<option value="${v.id}">${v.variant_name} (${v.stock_quantity} ${v.unit} in stock)</option>`).join('');
         }
     } else {
@@ -227,7 +227,7 @@ function addCartItem() {
     clearItemError();
     if (!SELECTED_PRODUCT) { document.getElementById('s-item-error').textContent = 'Search and select a product or service first.'; return; }
     if (SALE_MODE === 'product' && Number(SELECTED_PRODUCT.variant_count) > 0 && !SELECTED_VARIANT) {
-        document.getElementById('s-item-error').textContent = `Select a type for "${SELECTED_PRODUCT.name}" first.`;
+        document.getElementById('s-item-error').textContent = `Select a description for "${SELECTED_PRODUCT.name}" first.`;
         return;
     }
 
@@ -422,8 +422,8 @@ async function editSale(id) {
   EDITING_SALE_ID = id;
   document.getElementById('s-edit-id').value = id;
 
-  // product_name/unit from the API already fold in the type name (e.g.
-  // "Pen — Obama Pen") and the type's own unit, so this needs no extra
+  // product_name/unit from the API already fold in the description name (e.g.
+  // "Pen — Obama Pen") and the description's own unit, so this needs no extra
   // lookups - variant_id just rides along for when the sale is re-saved.
   CART = s.items.map(item => ({
     product_id: item.product_id, variant_id: item.variant_id || null, name: item.product_name, unit: item.unit || '',

@@ -263,7 +263,7 @@ function updateMatchHint(name) {
 }
 
 /**
- * Shows/hides the "Type" field for the single-purchase form. Only
+ * Shows/hides the "Description" field for the single-purchase form. Only
  * relevant once the matched product already has at least one type -
  * a product that doesn't have types yet keeps being restocked directly,
  * exactly as before. Adding a product's FIRST type is still done from
@@ -425,6 +425,44 @@ async function submitSinglePurchase(name) {
    ======================================================================== */
 let IMPORT_ROW_COUNT = 0;
 
+// Downloadable .xlsx starter file with the exact column headers
+// handleFileSelected()/findColumn() below know how to match, plus two
+// filled-in example rows and an "Instructions" tab - so someone can grab
+// it, replace the examples with their real purchase list, and upload it
+// straight back into the box below.
+function downloadImportTemplate() {
+    if (typeof XLSX === 'undefined') {
+        toast('The file library could not load - check your internet connection and try again.', 'error');
+        return;
+    }
+
+    const headers = ['Product Name', 'Description', 'Unit', 'Quantity', 'Buying Price', 'Selling Price', 'Category'];
+    const exampleRows = [
+        ['Rim Paper A4', '', 'pcs', 10, 15000, 18000, 'Paper'],
+        ['Pen', 'Obama Pen', 'pcs', 24, 300, 500, 'Stationery'],
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...exampleRows]);
+    sheet['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }];
+
+    const instructions = XLSX.utils.aoa_to_sheet([
+        ['How to use this template'],
+        [''],
+        ['1. One row per item you are purchasing.'],
+        ['2. "Product Name" is required - it is matched against your existing Product list, or a new one is created if it doesn\'t exist yet.'],
+        ['3. "Description" is only for a product that already has types (e.g. "Pen" with Obama Pen, Marker Pen...). Leave it blank for a plain product.'],
+        ['4. "Unit", "Quantity" and "Buying Price" are required for every row.'],
+        ['5. "Selling Price" and "Category" are optional - leave blank to keep the product\'s existing price/category.'],
+        ['6. Delete the two example rows on the "Purchases" tab before uploading, or just overwrite them with your own.'],
+        ['7. Save this file, then upload it from the "Import from Excel / CSV" tab on the Purchases page.'],
+    ]);
+    instructions['!cols'] = [{ wch: 100 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'Purchases');
+    XLSX.utils.book_append_sheet(wb, instructions, 'Instructions');
+    XLSX.writeFile(wb, 'eDESK_Purchase_Import_Template.xlsx');
+}
+
 function findColumn(row, keywords) {
     const keys = Object.keys(row);
     for (const k of keys) {
@@ -462,7 +500,7 @@ function handleFileSelected(e) {
 
             const parsedRows = json.map(row => {
                 const nameKey = findColumn(row, ['product', 'name', 'item']);
-                const typeKey = findColumn(row, ['type', 'variant']);
+                const typeKey = findColumn(row, ['description', 'type', 'variant']);
                 const qtyKey = findColumn(row, ['qty', 'quantity']);
                 const buyKey = findColumn(row, ['buy', 'cost']);
                 const sellKey = findColumn(row, ['sell', 'retail']);
@@ -554,7 +592,7 @@ function updateImportRowStatus(tr) {
         statusCell.innerHTML = '<span class="tag tag-gold">New</span><br><button type="button" class="btn btn-outline btn-sm mt-8" onclick="quickAddImportRow(this)">+ Add to List</button>';
     } else if (Number(match.variant_count) > 0) {
         if (!typeName) {
-            statusCell.innerHTML = '<span class="tag tag-red">Type required</span>';
+            statusCell.innerHTML = '<span class="tag tag-red">Description required</span>';
         } else {
             statusCell.innerHTML = '<span class="tag tag-gray">Checking type...</span>';
             checkImportRowType(tr, match, typeName);
@@ -640,7 +678,7 @@ async function confirmImport() {
         }
 
         if (Number(match.variant_count) > 0 && !typeName) {
-            problems.push(`Row ${i + 1} (${name}): this product has types - specify which type in the Type column.`);
+            problems.push(`Row ${i + 1} (${name}): this product has types - specify which type in the Description column.`);
             return;
         }
 

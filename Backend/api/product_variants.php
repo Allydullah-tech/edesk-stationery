@@ -16,6 +16,18 @@ if ($method === 'GET') {
         respond(true, $row);
     }
 
+    // Distinct type names already used anywhere in the system, for the
+    // "Types / Variants" suggestion list on the Add Item form - lets an
+    // admin pick a name that's been used before instead of retyping it.
+    if (isset($_GET['all_names'])) {
+        try {
+            $stmt = $pdo->query('SELECT DISTINCT variant_name FROM product_variants ORDER BY variant_name ASC');
+            respond(true, array_column($stmt->fetchAll(), 'variant_name'));
+        } catch (PDOException $e) {
+            respond(true, []);
+        }
+    }
+
     if (empty($_GET['product_id'])) respond(false, null, 'A product_id is required.', 422);
 
     $stmt = $pdo->prepare('SELECT * FROM product_variants WHERE product_id = ? ORDER BY variant_name ASC');
