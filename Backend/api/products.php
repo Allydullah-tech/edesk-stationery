@@ -47,6 +47,7 @@ if ($method === 'GET') {
                 COALESCE(v.variant_count, 0) AS variant_count,
                 CASE WHEN v.variant_count > 0 THEN v.total_stock ELSE p.stock_quantity END AS stock_quantity,
                 v.min_buying, v.max_buying, v.min_selling, v.max_selling,
+                v.min_minimum, v.max_minimum,
                 COALESCE(v.total_value, 0) AS variant_stock_value,
                 CASE WHEN v.low_variant_count > 0 THEN 1 ELSE 0 END AS has_low_variant,
                 v.variant_unit
@@ -61,6 +62,8 @@ if ($method === 'GET') {
                        MAX(buying_price) AS max_buying,
                        MIN(selling_price) AS min_selling,
                        MAX(selling_price) AS max_selling,
+                       MIN(minimum_price) AS min_minimum,
+                       MAX(minimum_price) AS max_minimum,
                        MIN(unit) AS variant_unit,
                        SUM(CASE WHEN status = 'active' AND stock_quantity <= reorder_level THEN 1 ELSE 0 END) AS low_variant_count
                 FROM product_variants

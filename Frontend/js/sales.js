@@ -92,9 +92,9 @@ function renderSuggestions(query) {
     list.innerHTML = CURRENT_MATCHES.map((p, i) => `
     <div class="autocomplete-item${i === 0 ? ' highlighted' : ''}" data-id="${p.id}">
       <span class="name">${p.name}</span>
-      <span class="meta">${SALE_MODE === 'product'
-        ? (Number(p.variant_count) > 0 ? p.variant_count + ' description(s)' : p.stock_quantity + ' ' + p.unit + ' in stock')
-        : money(p.selling_price)}</span>
+      <span class="meta">${Number(p.variant_count) > 0
+        ? p.variant_count + ' description(s)'
+        : (SALE_MODE === 'product' ? p.stock_quantity + ' ' + p.unit + ' in stock' : money(p.selling_price))}</span>
     </div>`).join('');
 
     list.querySelectorAll('.autocomplete-item').forEach(el => {
@@ -122,9 +122,10 @@ async function selectProduct(id) {
     document.getElementById('s-product-search').value = p.name;
     document.getElementById('s-product-suggestions').classList.add('hidden');
 
-    if (SALE_MODE === 'product' && Number(p.variant_count) > 0) {
-        // This product has descriptions - a specific one must be chosen before a
-        // price/quantity can be entered, since each description has its own.
+    if (Number(p.variant_count) > 0) {
+        // This product/service has descriptions - a specific one must be chosen
+        // before a price/quantity can be entered, since each description has
+        // its own price (e.g. "Printing" -> "A4" / "A3", or "Pen" -> "Obama Pen").
         const typeField = document.getElementById('s-type-field');
         const typeSelect = document.getElementById('s-type-select');
         typeField.classList.remove('hidden');
@@ -226,7 +227,7 @@ function clearItemError() { document.getElementById('s-item-error').textContent 
 function addCartItem() {
     clearItemError();
     if (!SELECTED_PRODUCT) { document.getElementById('s-item-error').textContent = 'Search and select a product or service first.'; return; }
-    if (SALE_MODE === 'product' && Number(SELECTED_PRODUCT.variant_count) > 0 && !SELECTED_VARIANT) {
+    if (Number(SELECTED_PRODUCT.variant_count) > 0 && !SELECTED_VARIANT) {
         document.getElementById('s-item-error').textContent = `Select a description for "${SELECTED_PRODUCT.name}" first.`;
         return;
     }

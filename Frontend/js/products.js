@@ -35,7 +35,7 @@ function computeStatusTag(p, isService) {
 async function loadProducts() {
     const tbody = document.getElementById('productsBody');
     const isService = PAGE_PRODUCT_TYPE === 1;
-    const colCount = isService ? 7 : 10;
+    const colCount = isService ? 6 : 10;
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="muted">Loading...</td></tr>`;
 
     const params = { type: String(PAGE_PRODUCT_TYPE) };
@@ -75,33 +75,41 @@ async function loadProducts() {
         <button class="icon-action-btn delete-btn" title="Delete" onclick="deleteProduct(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg></button>
       </td>`;
 
+        // Both products and services can have descriptions (types) - e.g. a
+        // "Printing" service can have "A4", "A3" descriptions, each with
+        // its own price, exactly like a "Pen" product can have "Obama Pen",
+        // "Marker Pen" descriptions. hasVariants/the cells below are shared
+        // between both pages; only the column layout differs further down.
+        const hasVariants = Number(p.variant_count) > 0;
+        const sellingCell = hasVariants ?
+            (Number(p.min_selling) === Number(p.max_selling) ? money(p.min_selling) : `${money(p.min_selling)} – ${money(p.max_selling)}`) :
+            money(p.selling_price);
+        const minCell = hasVariants ?
+            (p.min_minimum == null && p.max_minimum == null ? '—' :
+                (Number(p.min_minimum) === Number(p.max_minimum) ? money(p.min_minimum) : `${money(p.min_minimum)} – ${money(p.max_minimum)}`)) :
+            minPrice;
+        // "Description" column: doubles as the quick/emergency entry point for
+        // managing this item's types - same modal as before, just relocated
+        // and relabelled on the list.
+        const descriptionCell = hasVariants ?
+            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">${p.variant_count} desc${Number(p.variant_count) === 1 ? '' : 's'} →</button>` :
+            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">+ Add descs</button>`;
+
         if (isService) {
             return `<tr>
         <td><strong>${p.name}</strong></td>
-        <td>${p.category_name || '—'}</td>
-        <td>${money(p.buying_price)}</td>
-        <td>${minPrice}</td>
-        <td>${money(p.selling_price)}</td>
+        <td class="no-print">${descriptionCell}</td>
+        <td>${minCell}</td>
+        <td>${sellingCell}</td>
         <td class="no-print">${statusTag}</td>
         ${actions}
       </tr>`;
         }
 
-        const hasVariants = Number(p.variant_count) > 0;
         const buyingCell = hasVariants ?
             (Number(p.min_buying) === Number(p.max_buying) ? money(p.min_buying) : `${money(p.min_buying)} – ${money(p.max_buying)}`) :
             money(p.buying_price);
-        const sellingCell = hasVariants ?
-            (Number(p.min_selling) === Number(p.max_selling) ? money(p.min_selling) : `${money(p.min_selling)} – ${money(p.max_selling)}`) :
-            money(p.selling_price);
-        const minCell = hasVariants ? '—' : minPrice;
         const unitCell = hasVariants ? (p.variant_unit || '—') : p.unit;
-        // "Description" column: doubles as the quick/emergency entry point for
-        // managing this product's types - same modal as before, just relocated
-        // and relabelled on the list.
-        const descriptionCell = hasVariants ?
-            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">${p.variant_count} description${Number(p.variant_count) === 1 ? '' : 's'} →</button>` :
-            `<button type="button" class="btn btn-outline btn-sm" onclick="openTypesModal(${p.id})">+ Add descriptions</button>`;
 
         return `<tr>
       <td><strong>${p.name}</strong></td>
@@ -130,12 +138,11 @@ function openProductModal() {
     const unitField = document.getElementById('p-unit');
     if (unitField) unitField.value = 'pcs';
     resetNewVariantsList();
-    // Services can't have types (enforced server-side too) - only show the
-    // builder for the Products page. Every product must have at least one
-    // type, so start with one row ready to fill in.
+    // Both products and services must have at least one description/type -
+    // show the builder on either page, with one row ready to fill in.
     const variantsSection = document.getElementById('newVariantsSection');
-    if (variantsSection) variantsSection.style.display = PAGE_PRODUCT_TYPE === 1 ? 'none' : 'block';
-    if (PAGE_PRODUCT_TYPE === 0) addNewVariantRow();
+    if (variantsSection) variantsSection.style.display = 'block';
+    addNewVariantRow();
     openModal('productModal');
 }
 
@@ -145,7 +152,8 @@ function editProduct(id) {
     document.getElementById('productModalTitle').textContent = PAGE_PRODUCT_TYPE === 1 ? 'Edit Service' : 'Edit Product';
     document.getElementById('p-id').value = p.id;
     document.getElementById('p-name').value = p.name;
-    document.getElementById('p-category').value = p.category_name || '';
+    const categoryField = document.getElementById('p-category');
+    if (categoryField) categoryField.value = p.category_name || '';
     // Buying/selling/minimum/stock/reorder/unit only exist in the form for
     // Services now - a product's own copies of these are unused once it's
     // saved with types, so guard every one of them.
@@ -185,10 +193,11 @@ document.getElementById('productForm').addEventListener('submit', async(e) => {
             toast(err.message, 'error');
             return;
         }
-        // Products (not services) no longer carry their own price/unit/stock -
-        // every product is required to have at least one type.
-        if (PAGE_PRODUCT_TYPE === 0 && newVariants.length === 0) {
-            toast('Add at least one description before saving - every product needs at least one.', 'error');
+        // Neither products nor services carry their own price/unit/stock any
+        // more - every item (product or service) is required to have at
+        // least one description/type.
+        if (newVariants.length === 0) {
+            toast(`Add at least one description before saving - every ${PAGE_PRODUCT_TYPE === 1 ? 'service' : 'product'} needs at least one.`, 'error');
             return;
         }
     }
@@ -197,9 +206,10 @@ document.getElementById('productForm').addEventListener('submit', async(e) => {
     // the form for Services now - a product's price/unit/stock live on its
     // type(s) instead, so guard every one of them here.
     const unitField = document.getElementById('p-unit');
+    const categoryField = document.getElementById('p-category');
     const payload = {
         name: document.getElementById('p-name').value.trim(),
-        category_name: document.getElementById('p-category').value.trim(),
+        category_name: categoryField ? categoryField.value.trim() : '',
         is_service: PAGE_PRODUCT_TYPE,
         buying_price: document.getElementById('p-buying') ? document.getElementById('p-buying').value : '',
         selling_price: document.getElementById('p-selling') ? document.getElementById('p-selling').value : '',
@@ -254,17 +264,19 @@ async function deleteProduct(id) {
 function downloadProductsExcel() {
     const isService = PAGE_PRODUCT_TYPE === 1;
     const rows = PRODUCTS_CACHE.map(p => {
-        const hasVariants = !isService && Number(p.variant_count) > 0;
+        const hasVariants = Number(p.variant_count) > 0;
         return [
             p.name, p.category_name || '',
-            hasVariants ? `${p.min_buying}–${p.max_buying}` : p.buying_price,
+            isService ? '' : (hasVariants ? `${p.min_buying}–${p.max_buying}` : p.buying_price),
             hasVariants ? '' : (p.minimum_price || ''),
             hasVariants ? `${p.min_selling}–${p.max_selling}` : p.selling_price,
             isService ? '' : (hasVariants ? (p.variant_unit || '') : p.unit),
             isService ? '' : p.stock_quantity,
             p.status === 'disabled' ?
             'Disabled' :
-            (hasVariants ?
+            // Services have no stock, so - just like computeStatusTag() above -
+            // they can only ever be Active or Disabled, never Low.
+            (!isService && hasVariants ?
                 (Number(p.has_low_variant) > 0 ? 'Low' : 'Active') :
                 (!isService && Number(p.stock_quantity) <= Number(p.reorder_level) ? 'Low' : 'Active')),
         ];
@@ -327,11 +339,10 @@ function renderNamesOnlyList() {
 }
 
 /* =========================================================
-   Inline Types / Variants builder - lives inside the Add Item form so a
-   product's types can be created (or picked from ones used before, via
-   the type-name suggestions) at the same time the product itself is
-   created. Guarded like quickNameForm/variantForm below: these elements
-   only exist in products.html, never in services.html.
+   Inline Types / Variants builder - lives inside the Add Item/Add Service
+   form so an item's descriptions can be created (or picked from ones used
+   before, via the type-name suggestions) at the same time the item itself
+   is created. Shared by products.html and services.html.
    ========================================================= */
 async function loadTypeNameSuggestions() {
     const datalist = document.getElementById('typeNameSuggestions');
@@ -350,18 +361,16 @@ function addNewVariantRow() {
     const list = document.getElementById('newVariantsList');
     if (!list) return;
     const rowId = 'nv' + (++NEW_VARIANT_SEQ);
-    list.insertAdjacentHTML('beforeend', `
-    <div class="new-variant-row" data-row-id="${rowId}">
-      <div class="field-row nv-remove-row">
-        <div class="field">
-          <label>Description Name</label>
-          <input type="text" class="nv-name" list="typeNameSuggestions" placeholder="e.g. Obama Pen (type or pick one)">
-        </div>
-        <button type="button" class="icon-action-btn delete-btn" title="Remove this description" onclick="removeNewVariantRow('${rowId}')">
-          <svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg>
-        </button>
-      </div>
-      <div class="field-row">
+    const isService = PAGE_PRODUCT_TYPE === 1;
+    // Services don't carry a buying/cost price - only products do (they
+    // need it to work out stock value). Show just Selling Price for a
+    // service description; Buying + Selling side by side for a product.
+    const priceRow = isService ?
+        `<div class="field">
+          <label>Selling Price (TZS)</label>
+          <input type="number" class="nv-selling" min="0" step="0.01">
+        </div>` :
+        `<div class="field-row">
         <div class="field">
           <label>Buying Price (TZS)</label>
           <input type="number" class="nv-buying" min="0" step="0.01">
@@ -370,7 +379,19 @@ function addNewVariantRow() {
           <label>Selling Price (TZS)</label>
           <input type="number" class="nv-selling" min="0" step="0.01">
         </div>
+      </div>`;
+    list.insertAdjacentHTML('beforeend', `
+    <div class="new-variant-row" data-row-id="${rowId}">
+      <div class="field-row nv-remove-row">
+        <div class="field">
+          <label>Description Name</label>
+          <input type="text" class="nv-name" list="typeNameSuggestions" placeholder="e.g. ${isService ? 'A4' : 'Obama Pen'} (type or pick one)">
+        </div>
+        <button type="button" class="icon-action-btn delete-btn" title="Remove this description" onclick="removeNewVariantRow('${rowId}')">
+          <svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg>
+        </button>
       </div>
+      ${priceRow}
       <div class="field-row">
         <div class="field">
           <label>Minimum Price (TZS) — optional</label>
@@ -381,7 +402,7 @@ function addNewVariantRow() {
           <input type="text" class="nv-unit" placeholder="pcs, box..." value="pcs">
         </div>
       </div>
-      <div class="field-row">
+      ${isService ? '' : `<div class="field-row">
         <div class="field">
           <label>Stock Quantity</label>
           <input type="number" class="nv-stock" min="0" step="1" value="0">
@@ -390,7 +411,7 @@ function addNewVariantRow() {
           <label>Reorder Alert Level</label>
           <input type="number" class="nv-reorder" min="0" step="1" value="5">
         </div>
-      </div>
+      </div>`}
     </div>`);
 }
 
@@ -415,31 +436,31 @@ function collectNewVariants() {
         }
         variants.push({
             variant_name: name,
-            buying_price: row.querySelector('.nv-buying').value,
+            buying_price: row.querySelector('.nv-buying') ? row.querySelector('.nv-buying').value : '',
             selling_price: selling,
             minimum_price: row.querySelector('.nv-minimum').value,
             unit: row.querySelector('.nv-unit').value.trim() || 'pcs',
-            stock_quantity: row.querySelector('.nv-stock').value,
-            reorder_level: row.querySelector('.nv-reorder').value,
+            stock_quantity: row.querySelector('.nv-stock') ? row.querySelector('.nv-stock').value : '',
+            reorder_level: row.querySelector('.nv-reorder') ? row.querySelector('.nv-reorder').value : '',
         });
     }
     return variants;
 }
 
 /* =========================================================
-   Types (variants) modal - products.html only. Every element this
-   code touches (typesModal, typesBody, variantForm, ...) only exists
-   in products.html, never in services.html, and every entry point
-   into this block (openTypesModal) is only ever called from a button
-   rendered in the non-service branch of loadProducts() above - so
-   none of this runs on the Services page.
+   Types (variants/descriptions) modal - shared by products.html and
+   services.html. Every element this code touches (typesModal,
+   typesBody, variantForm, ...) exists on both pages now, so this runs
+   the same way whether the parent item is a product or a service.
    ========================================================= */
 async function openTypesModal(productId) {
     const p = PRODUCTS_CACHE.find(x => x.id == productId);
     if (!p) return;
     CURRENT_TYPES_PRODUCT = p;
+    const isService = PAGE_PRODUCT_TYPE === 1;
     document.getElementById('typesModalTitle').textContent = 'Descriptions — ' + p.name;
-    document.getElementById('typesModalSubtitle').textContent =
+    document.getElementById('typesModalSubtitle').textContent = isService ?
+        '"' + p.name + '" is the group name. Each description below has its own price, and is what gets sold and tracked individually.' :
         '"' + p.name + '" is the group name. Each description below has its own price, unit, stock and reorder level, and is what gets sold and tracked individually.';
     document.getElementById('v-product-id').value = p.id;
     resetVariantForm();
@@ -449,35 +470,47 @@ async function openTypesModal(productId) {
 
 async function loadTypesList() {
     const tbody = document.getElementById('typesBody');
-    tbody.innerHTML = '<tr><td colspan="9" class="muted">Loading...</td></tr>';
+    const colCount = PAGE_PRODUCT_TYPE === 1 ? 6 : 9;
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="muted">Loading...</td></tr>`;
     const res = await API.get('product_variants.php', { product_id: CURRENT_TYPES_PRODUCT.id });
-    if (!res.success) { tbody.innerHTML = `<tr><td colspan="9" class="muted">${res.message}</td></tr>`; return; }
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="${colCount}" class="muted">${res.message}</td></tr>`; return; }
     TYPES_CACHE = res.data;
     renderTypesList();
 }
 
 function renderTypesList() {
     const tbody = document.getElementById('typesBody');
+    const isService = PAGE_PRODUCT_TYPE === 1;
+    const colCount = isService ? 6 : 9;
+    // "Combined Stock" only exists on the Products page - services don't
+    // track stock, so this element isn't in services.html at all.
+    const totalStockEl = document.getElementById('types-total-stock');
     if (!TYPES_CACHE.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="muted">No descriptions yet. Add the first one below.</td></tr>';
-        document.getElementById('types-total-stock').textContent = '0';
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="muted">No descriptions yet. Add the first one below.</td></tr>`;
+        if (totalStockEl) totalStockEl.textContent = '0';
         return;
     }
     let totalStock = 0;
     tbody.innerHTML = TYPES_CACHE.map(v => {
         totalStock += Number(v.stock_quantity) || 0;
-        const low = v.status === 'active' && Number(v.stock_quantity) <= Number(v.reorder_level);
+        // Services have no stock, so they can only ever be Active or
+        // Disabled here too - same rule as computeStatusTag() above.
+        const low = !isService && v.status === 'active' && Number(v.stock_quantity) <= Number(v.reorder_level);
         const statusTag = v.status === 'disabled' ?
             '<span class="tag tag-gray">Disabled</span>' :
             (low ? '<span class="tag tag-low">Low</span>' : '<span class="tag tag-green">Active</span>');
+        // Services don't carry a buying/cost price, stock quantity, or
+        // reorder level - those columns are products-only, so they're
+        // simply left out of the row for services.
+        const buyingCell = isService ? '' : `<td>${money(v.buying_price)}</td>`;
+        const stockCells = isService ? '' : `<td>${v.stock_quantity}</td><td>${v.reorder_level}</td>`;
         return `<tr>
       <td><strong>${v.variant_name}</strong></td>
-      <td>${money(v.buying_price)}</td>
+      ${buyingCell}
       <td>${v.minimum_price ? money(v.minimum_price) : '—'}</td>
       <td>${money(v.selling_price)}</td>
       <td>${v.unit}</td>
-      <td>${v.stock_quantity}</td>
-      <td>${v.reorder_level}</td>
+      ${stockCells}
       <td class="no-print">${statusTag}</td>
       <td class="admin-only no-print">
         <button type="button" class="icon-action-btn edit-btn" title="Edit" onclick="editVariant(${v.id})"><svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg></button>
@@ -485,7 +518,7 @@ function renderTypesList() {
       </td>
     </tr>`;
     }).join('');
-    document.getElementById('types-total-stock').textContent = totalStock;
+    if (totalStockEl) totalStockEl.textContent = totalStock;
     applyRoleVisibility();
 }
 
@@ -495,8 +528,10 @@ function resetVariantForm() {
     form.reset();
     document.getElementById('v-id').value = '';
     document.getElementById('v-unit').value = 'pcs';
-    document.getElementById('v-reorder').value = 5;
-    document.getElementById('v-stock').value = 0;
+    const reorderField = document.getElementById('v-reorder');
+    if (reorderField) reorderField.value = 5;
+    const stockField = document.getElementById('v-stock');
+    if (stockField) stockField.value = 0;
     document.getElementById('variantFormTitle').textContent = '+ Add Description';
     document.getElementById('variantSubmitBtn').textContent = 'Add Description';
     document.getElementById('v-statusField').style.display = 'none';
@@ -508,12 +543,15 @@ function editVariant(id) {
     if (!v) return;
     document.getElementById('v-id').value = v.id;
     document.getElementById('v-name').value = v.variant_name;
-    document.getElementById('v-buying').value = v.buying_price;
+    const buyingField = document.getElementById('v-buying');
+    if (buyingField) buyingField.value = v.buying_price;
     document.getElementById('v-selling').value = v.selling_price;
     document.getElementById('v-minimum').value = v.minimum_price || '';
     document.getElementById('v-unit').value = v.unit;
-    document.getElementById('v-stock').value = v.stock_quantity;
-    document.getElementById('v-reorder').value = v.reorder_level;
+    const stockField = document.getElementById('v-stock');
+    if (stockField) stockField.value = v.stock_quantity;
+    const reorderField = document.getElementById('v-reorder');
+    if (reorderField) reorderField.value = v.reorder_level;
     document.getElementById('v-status').value = v.status;
     document.getElementById('variantFormTitle').textContent = 'Edit Description';
     document.getElementById('variantSubmitBtn').textContent = 'Update Description';
@@ -530,15 +568,18 @@ if (variantForm) {
     variantForm.addEventListener('submit', async(e) => {
         e.preventDefault();
         const id = document.getElementById('v-id').value;
+        const buyingField = document.getElementById('v-buying');
+        const stockField = document.getElementById('v-stock');
+        const reorderField = document.getElementById('v-reorder');
         const payload = {
             product_id: document.getElementById('v-product-id').value,
             variant_name: document.getElementById('v-name').value.trim(),
-            buying_price: document.getElementById('v-buying').value,
+            buying_price: buyingField ? buyingField.value : '',
             selling_price: document.getElementById('v-selling').value,
             minimum_price: document.getElementById('v-minimum').value,
             unit: document.getElementById('v-unit').value.trim() || 'pcs',
-            stock_quantity: document.getElementById('v-stock').value,
-            reorder_level: document.getElementById('v-reorder').value,
+            stock_quantity: stockField ? stockField.value : '',
+            reorder_level: reorderField ? reorderField.value : '',
         };
 
         let res;

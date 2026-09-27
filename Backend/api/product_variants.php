@@ -46,7 +46,10 @@ if ($method === 'POST') {
     $parent->execute([$productId]);
     $product = $parent->fetch();
     if (!$product) respond(false, null, 'Parent product not found.', 404);
-    if ($product['is_service']) respond(false, null, 'Services cannot have types.', 422);
+    // Both products and services can have descriptions/types - a service
+    // like "Printing" can have "A4", "A3" etc, each with its own price,
+    // exactly like a product can have several named variants.
+    $entityType = $product['is_service'] ? 'service' : 'product';
 
     $variantName = clean($d['variant_name']);
     if ($variantName === '') respond(false, null, 'Type name is required.', 422);
@@ -79,7 +82,7 @@ if ($method === 'POST') {
         respond(false, null, 'Could not save this type. Please make sure Backend/upgrade_add_product_variants.php has been run, then try again.', 500);
     }
     $newId = $pdo->lastInsertId();
-    log_activity($pdo, $user, 'create', 'product', $productId, 'Added type "' . $variantName . '" under "' . $product['name'] . '"');
+    log_activity($pdo, $user, 'create', $entityType, $productId, 'Added type "' . $variantName . '" under "' . $product['name'] . '"');
     respond(true, ['id' => $newId], 'Type "' . $variantName . '" added under "' . $product['name'] . '".');
 }
 
@@ -88,10 +91,11 @@ if ($method === 'PUT') {
     $d = body();
     if (empty($d['id'])) respond(false, null, 'Type id is required.', 422);
 
-    $existingStmt = $pdo->prepare('SELECT pv.*, p.name AS product_name FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = ?');
+    $existingStmt = $pdo->prepare('SELECT pv.*, p.name AS product_name, p.is_service FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = ?');
     $existingStmt->execute([(int)$d['id']]);
     $existing = $existingStmt->fetch();
     if (!$existing) respond(false, null, 'Type not found.', 404);
+    $entityType = $existing['is_service'] ? 'service' : 'product';
 
     $variantName = isset($d['variant_name']) ? clean($d['variant_name']) : $existing['variant_name'];
     if ($variantName === '') respond(false, null, 'Type name is required.', 422);
@@ -129,7 +133,7 @@ if ($method === 'PUT') {
     if ((float)$existing['buying_price'] != $newBuying) $changes[] = 'buying price ' . audit_money_diff($existing['buying_price'], $newBuying);
     if ((float)$existing['selling_price'] != $newSelling) $changes[] = 'selling price ' . audit_money_diff($existing['selling_price'], $newSelling);
 
-    log_activity($pdo, $user, 'update', 'product', $existing['product_id'],
+    log_activity($pdo, $user, 'update', $entityType, $existing['product_id'],
         'Edited type "' . $existing['variant_name'] . '" under "' . $existing['product_name'] . '"' . ($changes ? ': ' . implode(', ', $changes) : ' (no price/name changes)'));
 
     respond(true, null, 'Type updated successfully.');
@@ -140,7 +144,7 @@ if ($method === 'DELETE') {
     $id = (int)($_GET['id'] ?? 0);
     if (!$id) respond(false, null, 'Type id is required.', 422);
 
-    $lookup = $pdo->prepare('SELECT pv.variant_name, pv.product_id, p.name AS product_name FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = ?');
+    $lookup = $pdo->prepare('SELECT pv.variant_name, pv.product_id, p.name AS product_name, p.is_service FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = ?');
     $lookup->execute([$id]);
     $row = $lookup->fetch();
 
@@ -148,7 +152,7 @@ if ($method === 'DELETE') {
     $stmt->execute([$id]);
 
     if ($row) {
-        log_activity($pdo, $user, 'delete', 'product', $row['product_id'],
+        log_activity($pdo, $user, 'delete', $row['is_service'] ? 'service' : 'product', $row['product_id'],
             'Deleted type "' . $row['variant_name'] . '" under "' . $row['product_name'] . '"');
     }
     respond(true, null, 'Type removed.');

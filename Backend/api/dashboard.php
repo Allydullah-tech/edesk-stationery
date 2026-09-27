@@ -19,7 +19,9 @@ $stmt = $pdo->query('SELECT
     FROM products WHERE status = "active"');
 $stock = $stmt->fetch();
 
-// Low stock alerts - a plain product (no types) is checked against its
+// Low stock alerts - ONLY real products (is_service = 0). Services have no
+// stock, so they - and every one of their descriptions/types - are excluded.
+// A plain product (no types) is checked against its
 // own stock/reorder level, same as always. A product that HAS types is
 // skipped at that level (its own stock_quantity isn't used once types
 // exist) and each of its types is checked individually instead, shown
@@ -36,7 +38,7 @@ try {
         (SELECT p.id, CONCAT(p.name, ' → ', pv.variant_name) AS name, pv.stock_quantity, pv.reorder_level, pv.unit
          FROM product_variants pv
          JOIN products p ON p.id = pv.product_id
-         WHERE pv.status = 'active' AND p.status = 'active' AND pv.stock_quantity <= pv.reorder_level)
+         WHERE p.is_service = 0 AND pv.status = 'active' AND p.status = 'active' AND pv.stock_quantity <= pv.reorder_level)
         ORDER BY stock_quantity ASC LIMIT 15
     ");
     $lowStock = $stmt->fetchAll();

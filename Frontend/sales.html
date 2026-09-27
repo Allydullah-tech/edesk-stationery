@@ -9,6 +9,7 @@
     <link rel="icon" href="assets/icon-192.png">
     <meta name="theme-color" content="#101B30">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/cash-audit.css">
 </head>
 
 <body>
@@ -51,6 +52,7 @@
                     </div>
                 </div>
                 <div class="flex gap-8" style="align-items:center;">
+                    <button class="btn btn-outline btn-sm" onclick="openCashAudit()"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg> Cash Audit</button>
                     <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadSalesExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
                     <button class="btn btn-primary btn-sm" onclick="openSaleModal()">+ Record Sale</button>
                     <div class="user-chip">
@@ -283,6 +285,7 @@
     <script src="js/ui.js"></script>
     <script src="js/guard.js"></script>
     <script src="js/sales.js"></script>
+    <script src="js/cash-audit.js"></script>
 </body>
 
 </html>

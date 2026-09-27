@@ -1,0 +1,130 @@
+/* =========================================================
+   EDESK STATIONERY — Cash Audit
+   (Daily Cash Closing & Sales Reconciliation Sheet)
+   Used by js/cash-audit.js on the Sales page.
+   ========================================================= */
+
+/* ---------- Modal shell ---------- */
+.modal.modal-xl{max-width:860px;}
+.modal-xl .modal-head{position:sticky;top:0;z-index:3;background:#fff;}
+.ca-head-actions{display:flex;align-items:center;gap:10px;}
+.ca-status{font-size:12px;color:var(--muted);margin:0 0 10px;min-height:16px;}
+.ca-status.error{color:var(--red);font-weight:600;}
+.ca-scroll{overflow-x:auto;}
+.ca-note{font-size:11.5px;color:var(--muted);margin:12px 0 0;}
+
+/* ---------- The sheet itself (same markup on screen and in print) ---------- */
+.ca-sheet{
+  min-width:600px;max-width:760px;margin:0 auto;padding:22px 28px 26px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  font-family:"Times New Roman",Times,serif;color:#000;font-size:14px;line-height:1.35;
+}
+.ca-logo{text-align:center;}
+.ca-logo img{width:290px;max-width:100%;height:auto;margin:0 auto;display:block;}
+.ca-title{text-align:center;font-size:16px;font-weight:700;margin:4px 0 18px;letter-spacing:.2px;}
+
+.ca-meta{display:flex;flex-wrap:wrap;gap:8px 26px;margin-bottom:14px;font-size:14px;}
+.ca-meta .ca-item{display:flex;align-items:baseline;gap:6px;}
+.ca-meta .ca-fill{display:inline-block;min-width:120px;border-bottom:1px solid #000;padding:0 4px;min-height:1.25em;}
+
+.ca-section{font-weight:700;margin:16px 0 6px;font-size:14px;}
+
+.ca-sheet .ca-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px;}
+.ca-sheet .ca-table td{
+  border:1px solid #000;padding:5px 8px;vertical-align:middle;color:#000;background:#fff;
+}
+.ca-sheet .ca-table tr:hover{background:transparent;}
+.ca-sheet .ca-table tr:last-child td{border-bottom:1px solid #000;}
+.ca-sheet .ca-th td{font-weight:700;text-align:center;}
+.ca-sheet .ca-th td.ca-l{text-align:left;}
+.ca-sheet .ca-c{text-align:center;}
+.ca-sheet .ca-r{text-align:right;padding-right:12px;}
+.ca-sheet .ca-strong{font-weight:700;}
+.ca-sheet .ca-count col.c1{width:27%;} .ca-sheet .ca-count col.c2{width:17%;}
+.ca-sheet .ca-count col.c3{width:24%;} .ca-sheet .ca-count col.c4{width:32%;}
+.ca-sheet .ca-recon col.c1{width:72%;} .ca-sheet .ca-recon col.c2{width:28%;}
+.ca-sheet .ca-table i{font-style:italic;}
+
+.ca-remarks-box{vertical-align:top !important;height:74px;}
+.ca-remarks-box .ca-lbl{font-weight:700;}
+.ca-remarks-print{white-space:pre-wrap;word-break:break-word;}
+
+/* Editable fields on screen */
+.ca-sheet .ca-in{
+  width:100%;border:1px solid transparent;background:#FFFCF3;border-radius:4px;
+  padding:3px 5px;font:inherit;color:#000;text-align:inherit;
+}
+.ca-sheet .ca-in:hover{border-color:#E7D6A8;}
+.ca-sheet .ca-in:focus{outline:none;border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(240,184,73,.22);}
+.ca-sheet input[type=number]{-moz-appearance:textfield;appearance:textfield;}
+.ca-sheet input[type=number]::-webkit-outer-spin-button,
+.ca-sheet input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.ca-sheet .ca-in.ca-r{text-align:right;}
+.ca-sheet .ca-in.ca-c{text-align:center;}
+.ca-meta .ca-in{min-width:130px;width:auto;}
+.ca-sheet textarea.ca-in{resize:vertical;min-height:46px;display:block;margin-top:2px;}
+
+/* Prepared By / Approved By - same look as the other reports */
+.ca-sign{display:flex;justify-content:space-between;gap:40px;margin-top:26px;page-break-inside:avoid;}
+.ca-sign .ca-sig-block{flex:1;font-size:12.5px;color:#000;}
+.ca-sign .ca-sig-role{font-weight:700;font-size:13.5px;margin-bottom:10px;}
+.ca-sign .ca-sig-field{margin-bottom:12px;}
+.ca-sign .ca-sig-label{display:block;color:#444;font-size:11.5px;margin-bottom:16px;}
+.ca-sign .ca-sig-line{display:block;width:100%;border-top:1px solid #000;}
+
+/* ---------- Print copy: hidden on screen ---------- */
+#cashAuditPrint{display:none;}
+
+@media (max-width:640px){
+  /* Phones: let the sheet shrink to the screen instead of scrolling sideways */
+  .ca-sheet{min-width:0;padding:14px 10px 18px;font-size:13px;}
+  .ca-sheet .ca-table{font-size:12.5px;}
+  .ca-sheet .ca-table td{padding:4px 4px;}
+  .ca-sheet .ca-r{padding-right:6px;}
+  .ca-title{font-size:14px;}
+  .ca-sheet .ca-in{padding:3px 2px;}
+  .ca-meta{gap:6px 14px;}
+  .ca-sign{gap:18px;}
+}
+
+@media print{
+  /* Only the audit sheet prints while it's being downloaded as PDF. */
+  body.ca-printing > *:not(#cashAuditPrint){display:none !important;}
+  body.ca-printing #cashAuditPrint{display:block !important;}
+  body.ca-printing{background:#fff !important;}
+
+  #cashAuditPrint .ca-sheet{
+    border:none;border-radius:0;min-width:0;max-width:none;width:100%;margin:0;
+    padding:7mm 15mm 6mm;font-size:10.5pt;
+  }
+  #cashAuditPrint .ca-logo img{width:60mm;}
+  #cashAuditPrint .ca-title{font-size:13pt;margin:1mm 0 4mm;}
+  #cashAuditPrint .ca-meta{font-size:10.5pt;margin-bottom:2mm;gap:2mm 9mm;}
+  #cashAuditPrint .ca-meta .ca-fill{min-width:38mm;}
+  #cashAuditPrint .ca-section{font-size:11pt;margin:4mm 0 1.6mm;}
+
+  /* The app's global print rules style every table like a navy report table;
+     this form must stay a plain black-and-white bordered form. */
+  #cashAuditPrint .ca-table{width:100%;border-collapse:collapse;page-break-inside:avoid;}
+  #cashAuditPrint .ca-table tr{background:#fff !important;}
+  #cashAuditPrint .ca-table td{
+    border:1px solid #000 !important;font-size:10.5pt !important;padding:1.2mm 2.4mm !important;
+    color:#000 !important;background:#fff !important;height:6.8mm;
+  }
+  #cashAuditPrint .ca-table .ca-remarks-box{height:20mm;}
+  #cashAuditPrint .ca-sign{margin-top:7mm;gap:16mm;}
+  #cashAuditPrint .ca-sign .ca-sig-role{font-size:11pt;margin-bottom:2mm;}
+  #cashAuditPrint .ca-sign .ca-sig-field{margin-bottom:3mm;}
+  #cashAuditPrint .ca-sign .ca-sig-label{font-size:9.5pt;margin-bottom:7mm;}
+}
+
+/* Shorter paper (e.g. US Letter, 279mm) - tighten a little so the sheet still fits ONE page. */
+@media print and (max-height:290mm){
+  #cashAuditPrint .ca-sheet{padding-top:5mm;padding-bottom:4mm;}
+  #cashAuditPrint .ca-logo img{width:50mm;}
+  #cashAuditPrint .ca-section{margin:3mm 0 1.2mm;}
+  #cashAuditPrint .ca-table td{height:6.1mm;padding-top:.7mm !important;padding-bottom:.7mm !important;}
+  #cashAuditPrint .ca-table .ca-remarks-box{height:16mm;}
+  #cashAuditPrint .ca-sign{margin-top:5mm;}
+  #cashAuditPrint .ca-sign .ca-sig-label{margin-bottom:5.5mm;}
+}

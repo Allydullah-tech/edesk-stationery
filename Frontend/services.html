@@ -83,6 +83,9 @@
                         <div class="meta" id="print-date-products"></div>
                     </div>
                 </div>
+                <p class="help-text no-print" style="margin-bottom:12px;">
+                    Each service requires at least one description (e.g. "Printing" &rarr; "A4", "A3"), with more addable anytime via the "Description" column. Each description has its own price.
+                </p>
                 <div class="card">
                     <div class="filter-bar mt-8 no-print" style="margin-bottom:14px;">
                         <div class="field" style="margin:0;min-width:220px;">
@@ -96,8 +99,7 @@
                             <thead>
                                 <tr>
                                     <th>Category</th>
-                                    <th>Description</th>
-                                    <th>Buying/Cost Price</th>
+                                    <th class="no-print">Description</th>
                                     <th>Min. Selling Price</th>
                                     <th>Selling Price</th>
                                     <th class="no-print">Status</th>
@@ -106,7 +108,7 @@
                             </thead>
                             <tbody id="productsBody">
                                 <tr>
-                                    <td colspan="7" class="muted">Loading...</td>
+                                    <td colspan="6" class="muted">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -134,7 +136,7 @@
 
     <!-- Add / Edit Service Modal -->
     <div class="modal-overlay" id="productModal">
-        <div class="modal">
+        <div class="modal modal-lg">
             <div class="modal-head">
                 <h3 id="productModalTitle">Add Service</h3>
                 <button class="modal-close" onclick="closeModal('productModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
@@ -144,48 +146,26 @@
                     <input type="hidden" id="p-id">
                     <div class="field">
                         <label>Category</label>
-                        <input type="text" id="p-name" required placeholder="e.g. Consultation">
-                    </div>
-                    <div class="field">
-                        <label>Description</label>
-                        <input type="text" id="p-category" placeholder="e.g. Professional consultation service">
-                    </div>
-                    <div class="field">
-                        <label id="p-buying-label">Buying / Cost Price (TZS) — optional</label>
-                        <input type="number" id="p-buying" min="0" step="0.01">
-                        <p class="help-text" id="p-buying-hint">Leave blank if this service has no cost.</p>
-                    </div>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>Minimum Selling Price (TZS) — optional</label>
-                            <input type="number" id="p-minimum" min="0" step="0.01">
-                            <p class="help-text">A sale can never be recorded below this price. Leave blank for no floor.</p>
-                        </div>
-                        <div class="field">
-                            <label>Selling Price (TZS)</label>
-                            <input type="number" id="p-selling" min="0" step="0.01" required>
-                        </div>
-                    </div>
-                    <div class="field-row hidden" id="stockFields">
-                        <div class="field">
-                            <label>Stock Quantity</label>
-                            <input type="number" id="p-stock" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="field">
-                            <label>Reorder Alert Level</label>
-                            <input type="number" id="p-reorder" min="0" step="0.01" value="5">
-                        </div>
-                    </div>
-                    <div class="field">
-                        <label>Unit</label>
-                        <input type="text" id="p-unit" placeholder="job, session, page..." value="pcs">
+                        <input type="text" id="p-name" required placeholder="e.g. Printing, Binding">
                     </div>
                     <div class="field" id="statusField" style="display:none;">
                         <label>Status</label>
                         <select id="p-status"><option value="active">Active</option><option value="disabled">Disabled</option></select>
+                        <p class="help-text">Disabled services are hidden from Sales and the price list.</p>
                     </div>
+
+                    <!-- Descriptions / Variants builder - only shown when adding a brand-new service.
+                         For an existing service, use the "Description" column on the list instead. -->
+                    <div class="field" id="newVariantsSection">
+                        <label>Description</label>
+                        <p class="help-text">Add at least one description (e.g. "A4", "A3" for "Printing"). Price, unit and stock are set per description.</p>
+                        <div id="newVariantsList"></div>
+                        <button type="button" class="btn btn-outline btn-sm w-full" onclick="addNewVariantRow()">+ Add a Description</button>
+                    </div>
+
                     <button type="submit" class="btn btn-primary w-full mt-8">Save Service</button>
                 </form>
+                <datalist id="typeNameSuggestions"></datalist>
             </div>
         </div>
     </div>
@@ -204,6 +184,71 @@
                 </form>
                 <input type="text" id="namesOnlySearch" placeholder="Search names..." oninput="renderNamesOnlyList()" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;margin-bottom:10px;">
                 <div id="namesOnlyList" style="max-height:55vh;overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Descriptions (variants) Modal -->
+    <div class="modal-overlay" id="typesModal">
+        <div class="modal modal-lg">
+            <div class="modal-head">
+                <h3 id="typesModalTitle">Description</h3>
+                <button class="modal-close" onclick="closeModal('typesModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
+            </div>
+            <div class="modal-body">
+                <p class="help-text" id="typesModalSubtitle"></p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th>Minimum Price</th>
+                                <th>Selling Price</th>
+                                <th>Unit</th>
+                                <th class="no-print">Status</th>
+                                <th class="admin-only no-print">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="typesBody">
+                            <tr>
+                                <td colspan="6" class="muted">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <form id="variantForm" class="admin-only mt-16">
+                    <input type="hidden" id="v-id">
+                    <input type="hidden" id="v-product-id">
+                    <h4 id="variantFormTitle" style="margin:0 0 8px;">+ Add Description</h4>
+                    <div class="field">
+                        <label>Description Name</label>
+                        <input type="text" id="v-name" required placeholder="e.g. A4">
+                    </div>
+                    <div class="field">
+                        <label>Selling Price (TZS)</label>
+                        <input type="number" id="v-selling" min="0" step="0.01" required>
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Minimum Selling Price (TZS) — optional</label>
+                            <input type="number" id="v-minimum" min="0" step="0.01">
+                        </div>
+                        <div class="field">
+                            <label>Unit</label>
+                            <input type="text" id="v-unit" placeholder="job, session, page..." value="pcs">
+                        </div>
+                    </div>
+                    <div class="field" id="v-statusField" style="display:none;">
+                        <label>Status</label>
+                        <select id="v-status"><option value="active">Active</option><option value="disabled">Disabled</option></select>
+                    </div>
+                    <div class="flex gap-8">
+                        <button type="submit" class="btn btn-primary w-full mt-8" id="variantSubmitBtn">Add Description</button>
+                        <button type="button" class="btn btn-outline w-full mt-8 hidden" id="variantCancelBtn" onclick="resetVariantForm()">Cancel</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
