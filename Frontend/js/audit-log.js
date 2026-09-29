@@ -33,7 +33,7 @@ const ACTION_TAG_CLASS = { create: 'tag-green', update: 'tag-gold', delete: 'tag
 const ENTITY_LABELS = {
   sale: 'Sale', product: 'Product', service: 'Service', damage: 'Damage',
   expense: 'Expense', purchase: 'Purchase', debt_payment: 'Debt Payment',
-  user: 'User Account', login: 'Login',
+  user: 'User Account', login: 'Login', cash_audit: 'Cash Audit', cash_float: 'Opening Cash',
 };
 
 async function loadAuditLog() {

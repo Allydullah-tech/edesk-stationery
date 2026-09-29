@@ -116,24 +116,200 @@ let DASHBOARD_DATA = null;
 })();
 
 /**
- * Downloads (prints to PDF) only the Low Stock Alerts card -
- * a focused shopping list, without the rest of the dashboard.
+ * The Low Stock Alerts card's "Download" produces a ready-to-use supplier
+ * Purchase Order for the items running low - not just a list, something a
+ * worker can print, hand to (or send) a supplier, fill in prices by hand,
+ * and get signed. Layout mirrors the company's official Purchase Order /
+ * Supplier Purchase template.
  */
-function downloadLowStock() {
-  document.getElementById('print-date-lowstock').textContent = new Date().toLocaleString('en-GB');
-  document.body.classList.add('print-low-stock-only');
+const PURCHASE_ORDER_LOGO = 'assets/logo1.png'; // same file & size as the Cash Audit sheet
 
-  const cleanup = () => document.body.classList.remove('print-low-stock-only');
+function lowStockItemsOrEmpty() {
+  const list = (DASHBOARD_DATA && DASHBOARD_DATA.low_stock_alerts) || [];
+  if (!list.length) toast('All stock levels are healthy right now - there is nothing to order.', 'error');
+  return list;
+}
+
+let POF_BUILT = false;
+
+/** Opens the "how many are you going to buy" screen for the items running
+ *  low, before anything is downloaded. The PDF/Excel are only generated
+ *  once quantities have been entered here. */
+function openPurchaseOrderModal() {
+  const list = lowStockItemsOrEmpty();
+  if (!list.length) return;
+  buildPoFillModal();
+
+  document.getElementById('poFillBody').innerHTML = list.map((p, i) => `
+    <tr>
+      <td>${p.name}</td>
+      <td>${p.unit}</td>
+      <td>${p.stock_quantity}</td>
+      <td>${p.reorder_level}</td>
+      <td><input type="number" class="po-qty-input" min="1" step="1" inputmode="numeric"
+                 data-idx="${i}" placeholder="0"></td>
+    </tr>`).join('');
+
+  openModal('poFillModal');
+}
+
+function buildPoFillModal() {
+  if (POF_BUILT) return;
+  POF_BUILT = true;
+  document.getElementById('poFillCloseBtn').addEventListener('click', () => closeModal('poFillModal'));
+  document.getElementById('poFillPdfBtn').addEventListener('click', () => submitPurchaseOrder('pdf'));
+  document.getElementById('poFillExcelBtn').addEventListener('click', () => submitPurchaseOrder('excel'));
+}
+
+/** Reads the quantities the user just typed in, matches them back to the
+ *  low stock list (by position - the table is rebuilt fresh every time the
+ *  modal opens, so the order always lines up), and hands off to the PDF
+ *  or Excel generator. Every item must have a quantity greater than zero. */
+function submitPurchaseOrder(format) {
+  const list = lowStockItemsOrEmpty();
+  if (!list.length) return;
+
+  const inputs = document.querySelectorAll('#poFillBody .po-qty-input');
+  const items = list
+    .map((p, i) => {
+      const raw = inputs[i] ? parseInt(inputs[i].value, 10) : NaN;
+      return Object.assign({}, p, { buy_qty: raw > 0 ? raw : 0 });
+    })
+    .filter((p) => p.buy_qty > 0); // only the items actually being bought this time
+
+  if (!items.length) {
+    toast('Enter a quantity for at least one item you want to buy.', 'error');
+    return;
+  }
+
+  closeModal('poFillModal');
+  if (format === 'pdf') downloadLowStock(items); else downloadLowStockExcel(items);
+}
+
+function purchaseOrderHTML(items) {
+  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  const rows = items.map((p, i) => `
+      <tr>
+        <td class="po-c">${i + 1}</td>
+        <td>${p.name}</td>
+        <td class="po-c">${p.unit}</td>
+        <td class="po-c">${p.buy_qty}</td>
+        <td></td>
+        <td></td>
+        <td><span class="po-remark">${p.stock_quantity} ${p.unit} left in stock</span></td>
+      </tr>`).join('');
+
+  return `
+    <div class="po-sheet">
+      <div class="po-logo"><img src="${PURCHASE_ORDER_LOGO}" alt="eDesk Print &amp; Digital"></div>
+      <div class="po-heading">
+        <div class="po-brand">eDesk Print &amp; Digital</div>
+        <div class="po-title">PURCHASE ORDER / SUPPLIER PURCHASE</div>
+      </div>
+
+      <div class="po-business">
+        <div><b>Business Name:</b> eDesk Print &amp; Digital</div>
+        <div><b>Location:</b> Mbeya, Iyunga (Moja One)</div>
+        <div><b>Phone:</b> +255 763 399 399</div>
+      </div>
+
+      <div class="po-fields">
+        <div><b>Supplier Name:</b><span class="po-fill"></span></div>
+        <div><b>Supplier Contact:</b><span class="po-fill"></span></div>
+        <div><b>Date:</b><span class="po-fill">${today}</span></div>
+        <div><b>Purchase Ref No:</b><span class="po-fill"></span></div>
+      </div>
+
+      <table class="po-table">
+        <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"><col class="c7"></colgroup>
+        <thead>
+          <tr><th>S/N</th><th>Item Description</th><th>Unit</th><th>Quantity</th><th>Unit Price</th><th>Total</th><th>Remarks</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="po-totals">
+        <div>Subtotal:<span class="po-fill"></span></div>
+        <div>Transport Cost:<span class="po-fill"></span></div>
+        <div>Other Expenses:<span class="po-fill"></span></div>
+        <div>Grand Total:<span class="po-fill"></span></div>
+      </div>
+
+      <div class="po-sign">
+        <div class="po-sig-block">
+          <div class="po-sig-role">Prepared By</div>
+          <div class="po-sig-field"><span class="po-sig-label">Name</span><span class="po-sig-line"></span></div>
+          <div class="po-sig-field"><span class="po-sig-label">Signature</span><span class="po-sig-line"></span></div>
+        </div>
+        <div class="po-sig-block">
+          <div class="po-sig-role">Supplier Signature</div>
+          <div class="po-sig-field"><span class="po-sig-label">Name</span><span class="po-sig-line"></span></div>
+          <div class="po-sig-field"><span class="po-sig-label">Signature</span><span class="po-sig-line"></span></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** Downloads (prints to PDF) the Purchase Order for the items running low -
+ *  only that document prints, the rest of the Dashboard stays hidden,
+ *  exactly like the Cash Audit sheet's own PDF download. */
+async function downloadLowStock(items) {
+  if (!items || !items.length) return;
+
+  const box = document.getElementById('purchaseOrderPrint');
+  box.innerHTML = purchaseOrderHTML(items);
+
+  const img = box.querySelector('img');
+  if (img && img.decode) { try { await img.decode(); } catch (e) { /* print anyway */ } }
+
+  const oldTitle = document.title;
+  document.title = 'eDESK_Purchase_Order_' + new Date().toISOString().slice(0, 10);
+  document.body.classList.add('po-printing');
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    document.body.classList.remove('po-printing');
+    document.title = oldTitle;
+    box.innerHTML = '';
+  };
   window.addEventListener('afterprint', cleanup, { once: true });
-
   window.print();
 }
 
-function downloadLowStockExcel() {
-  const list = (DASHBOARD_DATA && DASHBOARD_DATA.low_stock_alerts) || [];
-  const rows = list.map(p => [p.name, p.stock_quantity, p.reorder_level, p.unit]);
-  exportToExcel('eDESK_Low_Stock_' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['Product', 'Current Stock', 'Reorder Level', 'Unit'], rows);
+function downloadLowStockExcel(items) {
+  if (!items || !items.length) return;
+
+  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  const rows = [
+    ['Business Name:', 'eDesk Print & Digital'],
+    ['Location:', 'Mbeya, Iyunga (Moja One)'],
+    ['Phone:', '+255 763 399 399'],
+    [],
+    ['Supplier Name:', ''],
+    ['Supplier Contact:', ''],
+    ['Date:', today],
+    ['Purchase Ref No:', ''],
+    [],
+    ['S/N', 'Item Description', 'Unit', 'Quantity', 'Unit Price', 'Total', 'Remarks'],
+    ...items.map((p, i) => [
+      i + 1, p.name, p.unit, p.buy_qty, '', '',
+      `${p.stock_quantity} ${p.unit} left in stock`,
+    ]),
+    [],
+    ['Subtotal:', ''],
+    ['Transport Cost:', ''],
+    ['Other Expenses:', ''],
+    ['Grand Total:', ''],
+    [],
+    ['Prepared By - Name:', ''],
+    ['Prepared By - Signature:', ''],
+    ['Supplier - Name:', ''],
+    ['Supplier - Signature:', ''],
+  ];
+  exportToExcel('eDESK_Purchase_Order_' + new Date().toISOString().slice(0, 10) + '.csv', ['PURCHASE ORDER / SUPPLIER PURCHASE'], rows);
 }
 
 function downloadDashboardExcel() {

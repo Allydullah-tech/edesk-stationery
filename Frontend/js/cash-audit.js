@@ -35,18 +35,23 @@
     return { cashier: u ? (u.full_name || '') : '', shift: '', opening: '', note: '', qty: {}, remarks: {} };
   }
 
-  function qtyOf(v) {
-    const q = parseInt(state.draft.qty[v], 10);
+  function qtyOf(v, ctx) {
+    ctx = ctx || state;
+    const q = parseInt(ctx.draft.qty[v], 10);
     return q > 0 ? q : 0;
   }
 
-  function calc() {
-    const d = state.draft;
+  /** ctx defaults to the live edit state, but a saved history entry can be
+   *  passed in instead so the exact same math/render code can show it
+   *  read-only without disturbing whatever is currently being edited. */
+  function calc(ctx) {
+    ctx = ctx || state;
+    const d = ctx.draft;
     let counted = 0;
-    DENOMS.forEach((v) => { counted += v * qtyOf(v); });
+    DENOMS.forEach((v) => { counted += v * qtyOf(v, ctx); });
     const opening = Math.max(0, Number(d.opening) || 0);
-    const total = state.cash + state.electronic + state.credit;
-    const expected = (opening + total) - state.expenses;
+    const total = ctx.cash + ctx.electronic + ctx.credit;
+    const expected = (opening + total) - ctx.expenses;
     return { counted, opening, total, expected };
   }
 
@@ -61,9 +66,16 @@
           <div class="modal-head">
             <h3>Cash Audit — Daily Cash Closing</h3>
             <div class="ca-head-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="caFloatBtn">
+                <svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg> Opening Cash
+              </button>
+              <button type="button" class="btn btn-outline btn-sm" id="caHistoryBtn">
+                <svg class="ui-icon"><use href="assets/icons.svg#calendar"></use></svg> History
+              </button>
               <button type="button" class="btn btn-outline btn-sm" id="caDownloadBtn">
                 <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download
               </button>
+              <button type="button" class="btn btn-primary btn-sm" id="caSaveBtn">Save</button>
               <button type="button" class="modal-close" id="caCloseBtn" title="Close">
                 <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
               </button>
@@ -73,7 +85,156 @@
             <p class="ca-status" id="caStatus"></p>
             <div class="ca-scroll"><div id="cashAuditSheet"></div></div>
             <p class="ca-note">Part B is filled in automatically from the sales and expenses recorded on the selected date.
-              Type the quantity of each note/coin in Part A and the Opening Cash in Part B.</p>
+              Type the quantity of each note/coin in Part A. Opening Cash in Part B comes from the <b>Opening Cash</b> button
+              (set it once for the day, then add to or reduce the float whenever it changes). Anyone can fill and
+              <b>Save</b> a sheet - it is recorded under your own name, and kept in <b>History</b> for everyone to review,
+              including sheets saved by other people on previous days.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="cashAuditHistoryModal">
+        <div class="modal modal-xl">
+          <div class="modal-head">
+            <h3>Cash Audit — History</h3>
+            <button type="button" class="modal-close" id="cahCloseBtn" title="Close">
+              <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="filter-bar" style="margin-bottom:14px;">
+              <div class="field" style="margin:0;width:150px;">
+                <label>From</label>
+                <input type="date" id="cahStart">
+              </div>
+              <div class="field" style="margin:0;width:150px;">
+                <label>To</label>
+                <input type="date" id="cahEnd">
+              </div>
+              <div class="field" style="margin:0;width:190px;">
+                <label>Saved By</label>
+                <select id="cahSavedBy"><option value="">Everyone</option></select>
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" id="cahFilterBtn">Filter</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Cashier</th><th>Shift</th><th>Counted</th><th>Expected</th>
+                    <th>Variance</th><th>Saved By</th><th>Saved At</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cahBody"><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="cashAuditViewModal">
+        <div class="modal modal-xl">
+          <div class="modal-head">
+            <h3>Cash Audit — <span id="cavTitle"></span></h3>
+            <div class="ca-head-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="cavDownloadBtn">
+                <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download
+              </button>
+              <button type="button" class="modal-close" id="cavCloseBtn" title="Close">
+                <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="ca-scroll"><div id="cashAuditViewSheet"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="cashFloatModal">
+        <div class="modal">
+          <div class="modal-head">
+            <h3>Opening Cash &amp; Float</h3>
+            <div class="ca-head-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="cfHistoryBtn">
+                <svg class="ui-icon"><use href="assets/icons.svg#calendar"></use></svg> History
+              </button>
+              <button type="button" class="modal-close" id="cfCloseBtn" title="Close">
+                <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label>Date</label>
+              <input type="date" id="cfDate">
+            </div>
+            <div id="cfSummary" class="cf-summary"></div>
+
+            <div class="cf-form">
+              <div class="field">
+                <label>What happened?</label>
+                <select id="cfType">
+                  <option value="opening">Set opening cash (what the day started with)</option>
+                  <option value="add">Add to float (float increased)</option>
+                  <option value="reduce">Reduce float (float decreased)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Amount (TZS)</label>
+                <input type="number" id="cfAmount" min="0" step="any" inputmode="decimal" placeholder="0">
+              </div>
+              <div class="field">
+                <label>Note (optional)</label>
+                <input type="text" id="cfNote" maxlength="255" placeholder="e.g. change added, cash taken to bank">
+              </div>
+              <button type="button" class="btn btn-primary" id="cfSaveBtn">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="cashFloatHistoryModal">
+        <div class="modal modal-xl">
+          <div class="modal-head">
+            <h3>Opening Cash — History</h3>
+            <button type="button" class="modal-close" id="cfhCloseBtn" title="Close">
+              <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="filter-bar" style="margin-bottom:14px;">
+              <div class="field" style="margin:0;width:150px;">
+                <label>From</label>
+                <input type="date" id="cfhStart">
+              </div>
+              <div class="field" style="margin:0;width:150px;">
+                <label>To</label>
+                <input type="date" id="cfhEnd">
+              </div>
+              <div class="field" style="margin:0;width:170px;">
+                <label>Type</label>
+                <select id="cfhType">
+                  <option value="">All records</option>
+                  <option value="opening">Opening cash</option>
+                  <option value="add">Added to float</option>
+                  <option value="reduce">Reduced from float</option>
+                </select>
+              </div>
+              <div class="field" style="margin:0;width:180px;">
+                <label>Saved By</label>
+                <select id="cfhSavedBy"><option value="">Everyone</option></select>
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" id="cfhFilterBtn">Filter</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Type</th><th>Amount</th><th>Note</th><th>Saved By</th><th>Saved At</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="cfhBody"><tr><td colspan="7" class="muted">Loading...</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -88,11 +249,10 @@
       const d = state.draft;
       if (k === 'qty') d.qty[t.dataset.v] = t.value;
       else if (k === 'rem') d.remarks[t.dataset.v] = t.value;
-      else if (k === 'opening') d.opening = t.value;
       else if (k === 'cashier') d.cashier = t.value;
       else if (k === 'shift') d.shift = t.value;
       else if (k === 'note') d.note = t.value;
-      if (k === 'qty' || k === 'opening') refreshOutputs();
+      if (k === 'qty') refreshOutputs();
     });
 
     box.addEventListener('change', (e) => {
@@ -108,6 +268,330 @@
       if (!state || !state.ready) { toast('Please wait — the sales for this day are still loading.', 'error'); return; }
       openDownloadMenu(this, printAudit, downloadAuditExcel);
     });
+    document.getElementById('caSaveBtn').addEventListener('click', saveCashAudit);
+    document.getElementById('caFloatBtn').addEventListener('click', () => openCashFloat());
+
+    box.addEventListener('click', (e) => {
+      if (e.target.closest('[data-act="float"]')) openCashFloat();
+    });
+
+    document.getElementById('cfCloseBtn').addEventListener('click', () => closeModal('cashFloatModal'));
+    document.getElementById('cfHistoryBtn').addEventListener('click', openCashFloatHistory);
+    document.getElementById('cfDate').addEventListener('change', () => loadFloatDay(true));
+    document.getElementById('cfSaveBtn').addEventListener('click', saveFloatEntry);
+
+    document.getElementById('cfhCloseBtn').addEventListener('click', () => closeModal('cashFloatHistoryModal'));
+    document.getElementById('cfhFilterBtn').addEventListener('click', loadFloatHistory);
+    document.getElementById('cfhBody').addEventListener('click', (e) => {
+      const del = e.target.closest('[data-fdel]');
+      if (del) deleteFloatEntry(del.dataset.fdel);
+    });
+    document.getElementById('caHistoryBtn').addEventListener('click', openCashAuditHistory);
+
+    document.getElementById('cahCloseBtn').addEventListener('click', () => closeModal('cashAuditHistoryModal'));
+    document.getElementById('cahFilterBtn').addEventListener('click', loadCashAuditHistory);
+    document.getElementById('cahBody').addEventListener('click', onHistoryBodyClick);
+
+    document.getElementById('cavCloseBtn').addEventListener('click', () => closeModal('cashAuditViewModal'));
+    document.getElementById('cavDownloadBtn').addEventListener('click', function () {
+      if (!viewCtx) return;
+      openDownloadMenu(this, () => printAudit(viewCtx), () => downloadAuditExcel(viewCtx));
+    });
+  }
+
+  /* ------------------------------------------------------------------ save + history */
+  let viewCtx = null; // the read-only context currently shown in the "View" modal
+
+  /** Saves the sheet as it stands right now as a NEW history entry - it
+   *  never overwrites an earlier save, so saving again later the same day
+   *  (a correction, a second shift, etc.) simply adds another entry and
+   *  the full history stays reviewable. Who saved it comes from the
+   *  logged-in session on the server, not from anything sent here. */
+  async function saveCashAudit() {
+    if (!state || !state.ready) { toast('Please wait — the sales for this day are still loading.', 'error'); return; }
+
+    const btn = document.getElementById('caSaveBtn');
+    btn.disabled = true;
+    try {
+      const denominations = DENOMS.map((v) => ({
+        denom: v, qty: qtyOf(v), remark: state.draft.remarks[v] || '',
+      })).filter((r) => r.qty > 0 || r.remark);
+
+      const res = await API.post('cash_audit.php', {
+        audit_date: state.date,
+        cashier: state.draft.cashier || '',
+        shift: state.draft.shift || '',
+        note: state.draft.note || '',
+        denominations,
+      });
+
+      if (!res.success) { toast(res.message || 'Could not save this cash audit.', 'error'); return; }
+
+      toast('Cash audit saved to history.');
+      const who = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER.full_name : 'you';
+      const when = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      setStatus('Saved to history by ' + who + ' at ' + when + '. Open "History" to review it.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /** Called by the "History" button. Lists saved audits for everyone -
+   *  admins and workers alike - so anyone can review what was filled on
+   *  any earlier day, not just their own entries. */
+  window.openCashAuditHistory = function () {
+    build();
+    const endEl = document.getElementById('cahEnd');
+    const startEl = document.getElementById('cahStart');
+    if (!endEl.value) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      endEl.value = end.toISOString().slice(0, 10);
+      startEl.value = start.toISOString().slice(0, 10);
+    }
+    openModal('cashAuditHistoryModal');
+    loadCashAuditHistory();
+  };
+
+  async function loadCashAuditHistory() {
+    const tbody = document.getElementById('cahBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="muted">Loading...</td></tr>';
+
+    const params = {
+      start: document.getElementById('cahStart').value,
+      end: document.getElementById('cahEnd').value,
+      limit: 500,
+    };
+    const savedBy = document.getElementById('cahSavedBy').value;
+    if (savedBy) params.saved_by = savedBy;
+
+    const res = await API.get('cash_audit.php', params);
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="9" class="muted">${esc(res.message || 'Could not load the history.')}</td></tr>`; return; }
+
+    populateSavedByFilter(res.data.savers);
+
+    const rows = res.data.entries;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" class="muted">No cash audits saved for this range yet.</td></tr>'; return; }
+
+    const isAdmin = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.role === 'admin');
+    tbody.innerHTML = rows.map((r) => {
+      const varAmt = Math.round(Number(r.variance) || 0);
+      const varCls = varAmt === 0 ? 'tag-green' : 'tag-red';
+      const varLabel = varAmt === 0 ? 'Balanced' : (varAmt > 0 ? 'Over ' + num(varAmt) : 'Short ' + num(Math.abs(varAmt)));
+      return `<tr>
+        <td>${fmtDate(r.audit_date)}</td>
+        <td>${esc(r.cashier || '—')}</td>
+        <td>${esc(r.shift || '—')}</td>
+        <td class="ca-r">${num(r.counted_cash)}</td>
+        <td class="ca-r">${num(r.expected_cash)}</td>
+        <td><span class="tag ${varCls}">${varLabel}</span></td>
+        <td>${esc(r.saved_by_name || '—')}</td>
+        <td class="muted">${fmtDateTimeCA(r.created_at)}</td>
+        <td>
+          <button type="button" class="btn btn-outline btn-sm" data-view="${r.id}">View</button>
+          ${isAdmin ? `<button type="button" class="btn btn-outline btn-sm" data-del="${r.id}">Delete</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function populateSavedByFilter(savers) {
+    const select = document.getElementById('cahSavedBy');
+    const current = select.value;
+    select.innerHTML = '<option value="">Everyone</option>' +
+      (savers || []).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    select.value = current;
+  }
+
+  function onHistoryBodyClick(e) {
+    const viewBtn = e.target.closest('[data-view]');
+    if (viewBtn) { viewHistoryEntry(viewBtn.dataset.view); return; }
+    const delBtn = e.target.closest('[data-del]');
+    if (delBtn) { deleteHistoryEntry(delBtn.dataset.del); }
+  }
+
+  /** Loads one saved entry read-only into its own context (never into the
+   *  live `state`), so viewing history can never overwrite whatever is
+   *  currently being typed into the live Cash Audit sheet. */
+  async function viewHistoryEntry(id) {
+    const res = await API.get('cash_audit.php', { id });
+    if (!res.success) { toast(res.message || 'Could not load this entry.', 'error'); return; }
+
+    const r = res.data;
+    const qty = {}, remarks = {};
+    (r.denominations || []).forEach((row) => { qty[row.denom] = row.qty; remarks[row.denom] = row.remark; });
+
+    viewCtx = {
+      date: r.audit_date,
+      draft: { cashier: r.cashier || '', shift: r.shift || '', opening: r.opening_cash, note: r.note || '', qty, remarks },
+      cash: Number(r.cash_sales) || 0,
+      electronic: Number(r.electronic_sales) || 0,
+      credit: Number(r.credit_sales) || 0,
+      expenses: Number(r.expenses) || 0,
+      ready: true,
+    };
+
+    document.getElementById('cavTitle').textContent =
+      fmtDate(r.audit_date) + ' · saved by ' + (r.saved_by_name || 'Unknown user') + ' · ' + fmtDateTimeCA(r.created_at);
+    document.getElementById('cashAuditViewSheet').innerHTML = sheetHTML(false, viewCtx);
+    openModal('cashAuditViewModal');
+  }
+
+  async function deleteHistoryEntry(id) {
+    if (!confirm('Remove this saved cash audit entry? This cannot be undone.')) return;
+    const res = await API.del('cash_audit.php', { id });
+    if (!res.success) { toast(res.message || 'Could not delete this entry.', 'error'); return; }
+    toast('Cash audit entry removed.');
+    loadCashAuditHistory();
+  }
+
+  function fmtDateTimeCA(dt) {
+    if (!dt) return '—';
+    const d = new Date(String(dt).replace(' ', 'T'));
+    if (isNaN(d)) return dt;
+    return d.toLocaleDateString('en-GB') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* ------------------------------------------------------------------ opening cash / float */
+  const FLOAT_TAG = { opening: ['tag-gold', 'Opening'], add: ['tag-green', 'Added'], reduce: ['tag-red', 'Reduced'] };
+  const floatSign = (t) => (t === 'add' ? '+' : (t === 'reduce' ? '−' : ''));
+
+  /** Opens the Opening Cash screen for a date (defaults to the sheet's date).
+   *  Anyone can set the opening cash and add to / reduce the float; every
+   *  action is saved as its own record under the user's own name. */
+  window.openCashFloat = function (date) {
+    build();
+    document.getElementById('cfDate').value = date || (state && state.date) || dayToday();
+    document.getElementById('cfAmount').value = '';
+    document.getElementById('cfNote').value = '';
+    openModal('cashFloatModal');
+    loadFloatDay(true);
+  };
+
+  async function loadFloatDay(setDefaultType) {
+    const box = document.getElementById('cfSummary');
+    const date = document.getElementById('cfDate').value;
+    if (!date) { box.innerHTML = ''; return; }
+    box.innerHTML = '<p class="muted">Loading...</p>';
+    const res = await API.get('cash_float.php', { date });
+    if (date !== document.getElementById('cfDate').value) return; // date changed while loading
+    if (!res.success) { box.innerHTML = `<p class="ca-status error">${esc(res.message || 'Could not load this day.')}</p>`; return; }
+    renderFloatSummary(res.data);
+    if (setDefaultType) document.getElementById('cfType').value = res.data.opening_entry ? 'add' : 'opening';
+  }
+
+  function renderFloatSummary(s) {
+    const items = (s.entries || []).map((e) => {
+      const tag = FLOAT_TAG[e.entry_type] || ['tag-gray', e.entry_type];
+      return `<li>
+        <span class="tag ${tag[0]}">${tag[1]}${e.superseded ? ' · replaced' : ''}</span>
+        <b class="${e.superseded ? 'cf-strike' : ''}">${floatSign(e.entry_type)}${num(e.amount)}</b>
+        <span class="muted">${esc(e.saved_by_name || '—')} · ${fmtDateTimeCA(e.created_at)}${e.note ? ' · ' + esc(e.note) : ''}</span>
+      </li>`;
+    }).join('');
+
+    document.getElementById('cfSummary').innerHTML = `
+      <div class="cf-grid">
+        <div><span>Opening cash</span><b>${s.opening_entry ? num(s.opening) : 'Not set'}</b></div>
+        <div><span>Added</span><b>+${num(s.added)}</b></div>
+        <div><span>Reduced</span><b>−${num(s.reduced)}</b></div>
+        <div class="cf-total"><span>Current float</span><b>${num(s.total)}</b></div>
+      </div>
+      ${items ? `<ul class="cf-list">${items}</ul>` : '<p class="muted cf-empty">Nothing recorded for this date yet.</p>'}
+      <p class="ca-note">The current float is what the Cash Audit uses as Opening Cash (Part B) for this date.</p>`;
+  }
+
+  async function saveFloatEntry() {
+    const date = document.getElementById('cfDate').value;
+    const type = document.getElementById('cfType').value;
+    const amount = document.getElementById('cfAmount').value;
+    if (!date) { toast('Please choose a date.', 'error'); return; }
+    if (amount === '' || isNaN(Number(amount)) || Number(amount) < 0) { toast('Please enter a valid amount.', 'error'); return; }
+
+    const btn = document.getElementById('cfSaveBtn');
+    btn.disabled = true;
+    try {
+      const res = await API.post('cash_float.php', {
+        float_date: date, entry_type: type, amount: Number(amount),
+        note: document.getElementById('cfNote').value,
+      });
+      if (!res.success) { toast(res.message || 'Could not save this.', 'error'); return; }
+
+      toast(res.message || 'Saved.');
+      document.getElementById('cfAmount').value = '';
+      document.getElementById('cfNote').value = '';
+      document.getElementById('cfType').value = 'add';
+      renderFloatSummary(res.data);
+      // keep Part B of the open sheet in step with what was just recorded
+      if (state && state.date === date) loadNumbers();
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  window.openCashFloatHistory = function () {
+    build();
+    const endEl = document.getElementById('cfhEnd');
+    const startEl = document.getElementById('cfhStart');
+    if (!endEl.value) {
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      endEl.value = dayToday();
+      startEl.value = start.toISOString().slice(0, 10);
+    }
+    openModal('cashFloatHistoryModal');
+    loadFloatHistory();
+  };
+
+  async function loadFloatHistory() {
+    const tbody = document.getElementById('cfhBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading...</td></tr>';
+
+    const params = {
+      start: document.getElementById('cfhStart').value,
+      end: document.getElementById('cfhEnd').value,
+      limit: 500,
+    };
+    const type = document.getElementById('cfhType').value;
+    if (type) params.type = type;
+    const savedBy = document.getElementById('cfhSavedBy').value;
+    if (savedBy) params.saved_by = savedBy;
+
+    const res = await API.get('cash_float.php', params);
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="7" class="muted">${esc(res.message || 'Could not load the history.')}</td></tr>`; return; }
+
+    const select = document.getElementById('cfhSavedBy');
+    const current = select.value;
+    select.innerHTML = '<option value="">Everyone</option>' +
+      (res.data.savers || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    select.value = current;
+
+    const rows = res.data.entries;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="muted">No opening cash records for this range.</td></tr>'; return; }
+
+    const isAdmin = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.role === 'admin');
+    tbody.innerHTML = rows.map((r) => {
+      const tag = FLOAT_TAG[r.entry_type] || ['tag-gray', r.entry_type];
+      return `<tr>
+        <td>${fmtDate(r.float_date)}</td>
+        <td><span class="tag ${tag[0]}">${tag[1]}</span>${r.superseded ? ' <span class="tag tag-gray">Replaced</span>' : ''}</td>
+        <td class="ca-r ${r.superseded ? 'cf-strike' : ''}">${floatSign(r.entry_type)}${num(r.amount)}</td>
+        <td>${esc(r.note || '—')}</td>
+        <td>${esc(r.saved_by_name || '—')}</td>
+        <td class="muted">${fmtDateTimeCA(r.created_at)}</td>
+        <td>${isAdmin ? `<button type="button" class="btn btn-outline btn-sm" data-fdel="${r.id}">Delete</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function deleteFloatEntry(id) {
+    if (!confirm('Remove this opening cash record? The float for that day will change. This cannot be undone.')) return;
+    const res = await API.del('cash_float.php', { id });
+    if (!res.success) { toast(res.message || 'Could not delete this record.', 'error'); return; }
+    toast('Record removed.');
+    loadFloatHistory();
+    if (state) loadNumbers(); // Part B may have depended on it
   }
 
   function signatureHTML() {
@@ -121,14 +605,15 @@
   }
 
   /** The whole form. editable=true -> inputs (screen); false -> plain text (print). */
-  function sheetHTML(editable) {
-    const d = state.draft;
-    const c = calc();
+  function sheetHTML(editable, ctx) {
+    ctx = ctx || state;
+    const d = ctx.draft;
+    const c = calc(ctx);
     const input = (k, val, extra = '', attrs = '') =>
       `<input class="ca-in ${extra}" data-k="${k}" ${attrs} value="${esc(val)}">`;
 
     const rows = DENOMS.map((v) => {
-      const q = qtyOf(v);
+      const q = qtyOf(v, ctx);
       return `<tr>
         <td class="ca-c">${num(v)}</td>
         <td class="ca-c">${editable
@@ -152,7 +637,7 @@
       <div class="ca-title">DAILY CASH CLOSING &amp; SALES RECONCILIATION SHEET</div>
 
       <div class="ca-meta">
-        ${metaField('Date', 'date', state.date, 'date')}
+        ${metaField('Date', 'date', ctx.date, 'date')}
         ${metaField('Cashier', 'cashier', d.cashier, 'text', 'maxlength="80"')}
         ${metaField('Shift', 'shift', d.shift, 'text', 'maxlength="40"')}
       </div>
@@ -171,15 +656,13 @@
         <colgroup><col class="c1"><col class="c2"></colgroup>
         <tr class="ca-th"><td class="ca-l">Description</td><td>Amount (TZS)</td></tr>
         <tr><td>Opening Cash (<i>Physical Float</i>)</td>
-            <td class="${editable ? '' : 'ca-r'}">${editable
-              ? input('opening', d.opening, 'ca-r', 'type="number" min="0" step="any" inputmode="decimal"')
-              : (c.opening ? num(c.opening) : '')}</td></tr>
-        <tr><td>Cash Physical Sales</td><td class="ca-r" data-out="cash">${num(state.cash)}</td></tr>
-        <tr><td>Electronic Sales (<i>Mixx by Yas/M-Pesa/Bank</i>)</td><td class="ca-r" data-out="electronic">${num(state.electronic)}</td></tr>
-        <tr><td>On Credit Sales</td><td class="ca-r" data-out="credit">${num(state.credit)}</td></tr>
+            <td class="ca-r">${editable ? '<button type="button" class="ca-float-link" data-act="float">Set / adjust</button> ' : ''}<span data-out="opening">${(editable || c.opening) ? num(c.opening) : ''}</span></td></tr>
+        <tr><td>Cash Physical Sales</td><td class="ca-r" data-out="cash">${num(ctx.cash)}</td></tr>
+        <tr><td>Electronic Sales (<i>Mixx by Yas/M-Pesa/Bank</i>)</td><td class="ca-r" data-out="electronic">${num(ctx.electronic)}</td></tr>
+        <tr><td>On Credit Sales</td><td class="ca-r" data-out="credit">${num(ctx.credit)}</td></tr>
         <tr><td>Total Sales (<i>Cash Physical Sales + Electronic Sales + On Credit Sales</i>)</td>
             <td class="ca-r ca-strong" data-out="total">${num(c.total)}</td></tr>
-        <tr><td>Expenses</td><td class="ca-r" data-out="expenses">${num(state.expenses)}</td></tr>
+        <tr><td>Expenses</td><td class="ca-r" data-out="expenses">${num(ctx.expenses)}</td></tr>
         <tr><td>Expected Cash <i>((Opening Float + Total Sales) - Expenses)</i></td>
             <td class="ca-r ca-strong" data-out="expected">${num(c.expected)}</td></tr>
         <tr><td colspan="2" class="ca-remarks-box"><span class="ca-lbl">Remarks:</span>${editable
@@ -201,6 +684,7 @@
     };
     DENOMS.forEach((v) => { const q = qtyOf(v); setOut('amt-' + v, q ? num(q * v) : ''); });
     setOut('counted', num(c.counted));
+    setOut('opening', num(c.opening));
     setOut('cash', num(state.cash));
     setOut('electronic', num(state.electronic));
     setOut('credit', num(state.credit));
@@ -223,14 +707,15 @@
 
     // limit is raised on purpose - the APIs default to the latest 100 rows,
     // which could silently drop sales on a very busy day.
-    const [sRes, eRes] = await Promise.all([
+    const [sRes, eRes, fRes] = await Promise.all([
       API.get('sales.php', { start: state.date, end: state.date, limit: 10000 }),
       API.get('expenses.php', { start: state.date, end: state.date, limit: 10000 }),
+      API.get('cash_float.php', { date: state.date }),
     ]);
     if (token !== reqToken) return; // the date was changed while this was loading
 
-    if (!sRes.success || !eRes.success) {
-      const msg = (!sRes.success ? sRes.message : eRes.message) || 'Could not load the figures.';
+    if (!sRes.success || !eRes.success || !fRes.success) {
+      const msg = (!sRes.success ? sRes.message : (!eRes.success ? eRes.message : fRes.message)) || 'Could not load the figures.';
       setStatus('Could not load the figures for this day: ' + msg + ' Close and open Cash Audit to try again.', true);
       toast(msg, 'error');
       return;
@@ -249,8 +734,11 @@
     state.electronic = Math.round(electronic);
     state.credit = Math.round(credit);
     state.expenses = Math.round(expenses);
+    // Opening cash = the day's float (opening + added - reduced), recorded on the Opening Cash screen.
+    state.draft.opening = Math.max(0, Math.round(Number(fRes.data.total) || 0));
     state.ready = true;
-    setStatus('');
+    setStatus(fRes.data.opening_entry ? '' :
+      'No opening cash has been recorded for ' + fmtDate(state.date) + ' yet. Use "Opening Cash" to set it.');
     refreshOutputs();
   }
 
@@ -258,6 +746,7 @@
     state.draft = drafts[date] || (drafts[date] = newDraft());
     state.date = date;
     state.cash = state.electronic = state.credit = state.expenses = 0;
+    state.draft.opening = 0;
     document.getElementById('cashAuditSheet').innerHTML = sheetHTML(true);
     loadNumbers();
   }
@@ -267,21 +756,23 @@
     build();
     const date = dayToday();
     state = { date, draft: drafts[date] || (drafts[date] = newDraft()), cash: 0, electronic: 0, credit: 0, expenses: 0, ready: false };
+    state.draft.opening = 0;
     document.getElementById('cashAuditSheet').innerHTML = sheetHTML(true);
     openModal('cashAuditModal');
     loadNumbers();
   };
 
   /* ------------------------------------------------------------------ PDF (print) */
-  async function printAudit() {
+  async function printAudit(ctx) {
+    ctx = ctx || state;
     const box = document.getElementById('cashAuditPrint');
-    box.innerHTML = sheetHTML(false);
+    box.innerHTML = sheetHTML(false, ctx);
 
     const img = box.querySelector('img');
     if (img && img.decode) { try { await img.decode(); } catch (e) { /* print anyway */ } }
 
     const oldTitle = document.title;
-    document.title = 'eDESK_Cash_Audit_' + state.date; // suggested file name in "Save as PDF"
+    document.title = 'eDESK_Cash_Audit_' + ctx.date; // suggested file name in "Save as PDF"
     document.body.classList.add('ca-printing');
 
     let cleaned = false;
@@ -367,9 +858,10 @@
     return { w: dv.getUint32(16), h: dv.getUint32(20) };
   }
 
-  function buildXlsx(c, logo) {
+  function buildXlsx(c, logo, ctx) {
+    ctx = ctx || state;
     const enc = new TextEncoder();
-    const d = state.draft;
+    const d = ctx.draft;
     const FONT = 'Times New Roman';
 
     /* ---- styles -------------------------------------------------------- */
@@ -443,7 +935,7 @@
     str(0, 2, 'DAILY CASH CLOSING & SALES RECONCILIATION SHEET', S.title);
     merge(2, 0, 2, 3, S.title); heights[2] = 28;
 
-    rich(0, 4, [{ t: 'Date: ', b: true }, { t: fmtDate(state.date) }], S.meta);
+    rich(0, 4, [{ t: 'Date: ', b: true }, { t: fmtDate(ctx.date) }], S.meta);
     rich(1, 4, [{ t: 'Cashier: ', b: true }, { t: d.cashier }], S.meta); merge(4, 1, 4, 2, S.meta);
     rich(3, 4, [{ t: 'Shift: ', b: true }, { t: d.shift }], S.meta);
     heights[4] = 20;
@@ -458,7 +950,7 @@
 
     DENOMS.forEach((v, i) => {
       const r = 8 + i;
-      const q = qtyOf(v);
+      const q = qtyOf(v, ctx);
       numc(0, r, v, S.denom);
       if (q) numc(1, r, q, S.qty); else blank(1, r, S.qty);
       numc(2, r, q * v, S.amtHide, `A${r}*B${r}`);
@@ -481,11 +973,11 @@
 
     const lines = [
       [[{ t: 'Opening Cash ' }, { t: '(Physical Float)', i: true }], c.opening, S.amt, null],
-      [[{ t: 'Cash Physical Sales' }], state.cash, S.amt, null],
-      [[{ t: 'Electronic Sales ' }, { t: '(Mixx by Yas/M-Pesa/Bank)', i: true }], state.electronic, S.amt, null],
-      [[{ t: 'On Credit Sales' }], state.credit, S.amt, null],
+      [[{ t: 'Cash Physical Sales' }], ctx.cash, S.amt, null],
+      [[{ t: 'Electronic Sales ' }, { t: '(Mixx by Yas/M-Pesa/Bank)', i: true }], ctx.electronic, S.amt, null],
+      [[{ t: 'On Credit Sales' }], ctx.credit, S.amt, null],
       [[{ t: 'Total Sales ' }, { t: '(Cash Physical Sales + Electronic Sales + On Credit Sales)', i: true }], c.total, S.amtBold, 'SUM(C{r1}:C{r3})'],
-      [[{ t: 'Expenses' }], state.expenses, S.amt, null],
+      [[{ t: 'Expenses' }], ctx.expenses, S.amt, null],
       [[{ t: 'Expected Cash ' }, { t: '((Opening Float + Total Sales) - Expenses)', i: true }], c.expected, S.amtBold, '(C{r0}+C{r4})-C{r5}'],
     ];
     const r0 = rB + 2; // first line row (Opening Cash)
@@ -602,8 +1094,9 @@ ${hasLogo ? '<drawing r:id="rId1"/>' : ''}
     return zipStore(files);
   }
 
-  async function downloadAuditExcel() {
-    if (!state || !state.ready) { toast('Please wait — the sales for this day are still loading.', 'error'); return; }
+  async function downloadAuditExcel(ctx) {
+    ctx = ctx || state;
+    if (!ctx || !ctx.ready) { toast('Please wait — the sales for this day are still loading.', 'error'); return; }
 
     let logo = null;
     try {
@@ -611,11 +1104,11 @@ ${hasLogo ? '<drawing r:id="rId1"/>' : ''}
       if (res.ok) logo = new Uint8Array(await res.arrayBuffer());
     } catch (e) { /* no logo - the sheet is still complete */ }
 
-    const blob = buildXlsx(calc(), logo);
+    const blob = buildXlsx(calc(ctx), logo, ctx);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'eDESK_Cash_Audit_' + state.date + '.xlsx';
+    a.download = 'eDESK_Cash_Audit_' + ctx.date + '.xlsx';
     document.body.appendChild(a);
     a.click();
     a.remove();

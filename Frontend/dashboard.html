@@ -9,6 +9,7 @@
     <link rel="icon" href="assets/icon-192.png">
     <meta name="theme-color" content="#101B30">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/purchase-order.css">
 </head>
 
 <body>
@@ -87,21 +88,6 @@
                     <div class="ph-bottom">
                         <div class="ph-report-of">REPORT: <strong>Dashboard</strong></div>
                         <div class="meta" id="print-date-dashboard"></div>
-                    </div>
-                </div>
-
-                <div class="print-header" id="lowStockPrintHeader">
-                    <div class="ph-top">
-                        <img src="assets/logo1.png" alt="eDESK">
-                        <div class="ph-brand">
-                            <div class="doc-brand-name">eDesk<span>PRINT &amp; DIGITAL</span></div>
-                            <div class="doc-brand-tagline">Print. Apply. Create.</div>
-                            <div class="doc-brand-address">Iyunga, Mbeya &nbsp;|&nbsp; Tel: +255 763 399 399</div>
-                        </div>
-                    </div>
-                    <div class="ph-bottom">
-                        <div class="ph-report-of">REPORT: <strong>Low Stock Alert</strong></div>
-                        <div class="meta" id="print-date-lowstock"></div>
                     </div>
                 </div>
 
@@ -214,7 +200,7 @@
                     <div class="card" id="lowStockCard">
                         <div class="flex-between">
                             <div class="card-title" style="margin:0;">Low Stock Alerts</div>
-                            <button class="btn btn-outline btn-sm no-print" onclick="openDownloadMenu(this, downloadLowStock, downloadLowStockExcel)">
+                            <button class="btn btn-outline btn-sm no-print" onclick="openPurchaseOrderModal()">
               <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download
             </button>
                         </div>
@@ -241,6 +227,38 @@
             </div>
         </div>
     </div>
+
+    <div class="modal-overlay" id="poFillModal">
+        <div class="modal modal-xl">
+            <div class="modal-head">
+                <h3>Purchase Order — Quantity to Buy</h3>
+                <button type="button" class="modal-close" id="poFillCloseBtn" title="Close">
+                    <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="ca-note" style="margin-top:0;">Enter how many of each item you plan to go and buy, then download the Purchase Order.</p>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Item</th><th>Unit</th><th>In Stock</th><th>Reorder Level</th><th>Quantity to Buy</th></tr>
+                        </thead>
+                        <tbody id="poFillBody"></tbody>
+                    </table>
+                </div>
+                <div class="ca-head-actions" style="justify-content:flex-end;margin-top:16px;">
+                    <button type="button" class="btn btn-outline btn-sm" id="poFillExcelBtn">
+                        <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download Excel
+                    </button>
+                    <button type="button" class="btn btn-primary btn-sm" id="poFillPdfBtn">
+                        <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="purchaseOrderPrint" aria-hidden="true"></div>
 
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>

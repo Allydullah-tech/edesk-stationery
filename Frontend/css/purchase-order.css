@@ -1,0 +1,105 @@
+/* =========================================================
+   EDESK STATIONERY — Purchase Order (Low Stock restock sheet)
+   Used by js/dashboard.js on the Dashboard page.
+   The logo and its size intentionally match the Cash Audit sheet
+   (see css/cash-audit.css .ca-logo) - same file, same dimensions.
+   ========================================================= */
+
+/* ---------- The document itself (same markup on screen preview and print) ---------- */
+.po-sheet{
+  min-width:600px;max-width:760px;margin:0 auto;padding:22px 28px 26px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  font-family:"Times New Roman",Times,serif;color:#000;font-size:14px;line-height:1.35;
+}
+.po-logo{text-align:center;}
+.po-logo img{width:290px;max-width:100%;height:auto;margin:0 auto;display:block;}
+
+.po-heading{text-align:center;margin:4px 0 16px;}
+.po-brand{font-size:18px;font-weight:700;}
+.po-title{font-size:12px;font-weight:700;margin-top:2px;letter-spacing:.2px;}
+
+.po-business{margin-bottom:12px;font-size:12px;}
+.po-business div{margin:2px 0;}
+
+.po-fields{margin-bottom:14px;font-size:12px;}
+.po-fields div{display:flex;align-items:baseline;gap:6px;margin:5px 0;}
+.po-fill{flex:1;display:inline-block;border-bottom:1px solid #000;min-height:1.2em;padding:0 4px;}
+
+.po-sheet table.po-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px;margin-bottom:14px;}
+.po-table th,.po-table td{border:1px solid #000;padding:5px 6px;vertical-align:middle;color:#000;background:#fff;}
+.po-table th{font-weight:700;text-align:center;}
+.po-table td.po-c{text-align:center;}
+.po-table td.po-r{text-align:right;}
+.po-table col.c1{width:6%;} .po-table col.c2{width:25%;} .po-table col.c3{width:8%;}
+.po-table col.c4{width:14%;} .po-table col.c5{width:15%;} .po-table col.c6{width:13%;} .po-table col.c7{width:19%;}
+.po-table th{font-size:11px;letter-spacing:0;padding:5px 4px;}
+.po-remark{font-size:10.5px;color:#333;}
+
+.po-totals{font-size:12px;margin-bottom:8px;}
+.po-totals div{display:flex;align-items:baseline;gap:6px;font-weight:700;margin:6px 0;}
+
+/* Prepared By / Supplier Signature */
+.po-sign{display:flex;justify-content:space-between;gap:40px;margin-top:22px;page-break-inside:avoid;}
+.po-sign .po-sig-block{flex:1;font-size:12px;color:#000;}
+.po-sign .po-sig-role{font-weight:700;font-size:12.5px;margin-bottom:10px;}
+.po-sign .po-sig-field{margin-bottom:12px;}
+.po-sign .po-sig-label{display:block;color:#444;font-size:11px;margin-bottom:16px;}
+.po-sign .po-sig-line{display:block;width:100%;border-top:1px solid #000;}
+
+/* ---------- "Quantity to Buy" input (poFillModal) ---------- */
+.po-qty-input{
+  width:90px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;
+  font-size:13.5px;background:#FBFCFE;color:var(--ink);text-align:right;
+}
+.po-qty-input:focus{
+  outline:none;border-color:var(--gold);background:#fff;
+  box-shadow:0 0 0 3px rgba(240,184,73,.22);
+}
+.po-qty-input::-webkit-outer-spin-button,
+.po-qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+
+/* ---------- Print copy: hidden on screen, shown only while printing ---------- */
+#purchaseOrderPrint{display:none;}
+
+@media print{
+  /* Only the purchase order prints while it's being downloaded as PDF -
+     the rest of the Dashboard page (cards, sidebar, etc.) stays hidden. */
+  body.po-printing > *:not(#purchaseOrderPrint){display:none !important;}
+  body.po-printing #purchaseOrderPrint{display:block !important;}
+  body.po-printing{background:#fff !important;}
+
+  #purchaseOrderPrint .po-sheet{
+    border:none;border-radius:0;min-width:0;max-width:none;width:100%;margin:0;
+    padding:7mm 15mm 6mm;font-size:10.5pt;
+  }
+  #purchaseOrderPrint .po-logo img{width:60mm;}
+  #purchaseOrderPrint .po-brand{font-size:14pt;}
+  #purchaseOrderPrint .po-title{font-size:11pt;}
+  #purchaseOrderPrint .po-business,
+  #purchaseOrderPrint .po-fields,
+  #purchaseOrderPrint .po-totals{font-size:10.5pt;}
+
+  /* The app's global print rules style every table like a navy report table;
+     this form must stay a plain black-and-white bordered form. */
+  #purchaseOrderPrint .po-table{width:100%;border-collapse:collapse;page-break-inside:avoid;font-size:10pt;}
+  #purchaseOrderPrint .po-table tr{background:#fff !important;}
+  #purchaseOrderPrint .po-table th,
+  #purchaseOrderPrint .po-table td{
+    border:1px solid #000 !important;font-size:10pt !important;padding:1.3mm 1.5mm !important;
+    color:#000 !important;background:#fff !important;
+  }
+  #purchaseOrderPrint .po-table th{font-size:9pt !important;letter-spacing:0 !important;}
+  #purchaseOrderPrint .po-remark{font-size:8.5pt;}
+  #purchaseOrderPrint .po-sign{margin-top:7mm;gap:16mm;}
+  #purchaseOrderPrint .po-sign .po-sig-role{font-size:11pt;margin-bottom:2mm;}
+  #purchaseOrderPrint .po-sign .po-sig-field{margin-bottom:3mm;}
+  #purchaseOrderPrint .po-sign .po-sig-label{font-size:9pt;margin-bottom:7mm;}
+}
+
+/* Shorter paper (e.g. US Letter, 279mm) - tighten a little so the sheet still fits ONE page. */
+@media print and (max-height:290mm){
+  #purchaseOrderPrint .po-sheet{padding-top:5mm;padding-bottom:4mm;}
+  #purchaseOrderPrint .po-logo img{width:50mm;}
+  #purchaseOrderPrint .po-sign{margin-top:5mm;}
+  #purchaseOrderPrint .po-sign .po-sig-label{margin-bottom:5.5mm;}
+}

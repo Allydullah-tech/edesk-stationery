@@ -139,7 +139,7 @@ async function selectProduct(id) {
             typeSelect.innerHTML = '<option value="">No active descriptions available</option>';
         } else {
             typeSelect.innerHTML = '<option value="">Select a description...</option>' +
-                CURRENT_TYPE_OPTIONS.map(v => `<option value="${v.id}">${v.variant_name} (${v.stock_quantity} ${v.unit} in stock)</option>`).join('');
+                CURRENT_TYPE_OPTIONS.map(v => `<option value="${v.id}">${v.variant_name}${SALE_MODE === 'product' ? ' (' + v.stock_quantity + ' ' + v.unit + ' in stock)' : ''}</option>`).join('');
         }
     } else {
         hideTypeField();
