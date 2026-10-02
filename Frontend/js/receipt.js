@@ -115,7 +115,7 @@ function renderReceipt(s) {
 
                 <div class="shop-meta">
                     Mbeya, Iyunga (Moja One)<br>
-                    +255 763 399 399
+                    +255 763 399 399 | 0736 389 399
                 </div>
 
             </div>
@@ -208,8 +208,8 @@ function renderReceipt(s) {
             <hr>
 
             <div class="footer-note">
-                Thank you for your business!<br>
-                Goods once sold are not returnable without this receipt.
+                Thank you for choosing eDesk!<br>
+                No returns without this receipt.
             </div>
 
         </div>
