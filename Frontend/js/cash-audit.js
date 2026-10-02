@@ -20,6 +20,38 @@
   'use strict';
 
   const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50];
+
+  // The clock helpers normally come from ui.js. These copies are only used if the page still has an
+  // older ui.js, so the Cash Audit keeps working (local date, 24-hour time) either way.
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const localDateStr = (typeof window.localDateStr === 'function') ? window.localDateStr : function (d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  };
+  const fmtTime24 = (typeof window.fmtTime24 === 'function') ? window.fmtTime24 : function (value, withSeconds) {
+    let h, m, sec;
+    if (typeof value === 'string') {
+      const t = value.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (!t) return '—';
+      h = t[1]; m = t[2]; sec = t[3] || '00';
+    } else {
+      const d = value || new Date();
+      if (isNaN(d)) return '—';
+      h = pad2(d.getHours()); m = pad2(d.getMinutes()); sec = pad2(d.getSeconds());
+    }
+    return h + ':' + m + (withSeconds ? ':' + sec : '');
+  };
+  const fmtDateTime24 = (typeof window.fmtDateTime24 === 'function') ? window.fmtDateTime24 : function (value, withSeconds) {
+    if (typeof value === 'string') {
+      const t = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!t) return value || '—';
+      return t[3] + '/' + t[2] + '/' + t[1] + ' ' + fmtTime24(value, withSeconds);
+    }
+    const d = value || new Date();
+    if (isNaN(d)) return '—';
+    return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + fmtTime24(d, withSeconds);
+  };
+
   const LOGO_SRC = 'assets/logo1.png'; // same logo as the login page
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -32,7 +64,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
-  const dayToday = () => (typeof todayStr === 'function' ? todayStr() : new Date().toISOString().slice(0, 10));
+  const dayToday = () => (typeof todayStr === 'function' ? todayStr() : localDateStr());
 
   function newDraft() {
     const u = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER : null;
@@ -208,7 +240,6 @@
                 <input type="text" id="cfNote" maxlength="255" placeholder="e.g. change added, cash taken to bank">
               </div>
               <button type="button" class="btn btn-primary" id="cfSaveBtn">Save</button>
-              
             </div>
           </div>
         </div>
@@ -285,8 +316,6 @@
                 <textarea id="bdRemark" rows="2" maxlength="1000" placeholder="e.g. Deposited today's excess cash to the boss's bank account."></textarea>
               </div>
               <button type="button" class="btn btn-primary" id="bdSaveBtn">Save Bank Deposit</button>
-              <p class="ca-note">The deposit is taken out of the <b>Total Cash</b> counted in Part A. Whatever is left (Remaining Cash) is the cash kept at the
-                office and automatically becomes the next day's Opening Cash.</p>
             </div>
             <div id="bdList"></div>
           </div>
@@ -439,7 +468,7 @@
 
       toast('Cash audit saved to history.');
       const who = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER.full_name : 'you';
-      const when = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const when = fmtTime24(new Date());
       setStatus('Saved to history by ' + who + ' at ' + when + '. Open "History" to review it.');
     } finally {
       btn.disabled = false;
@@ -457,8 +486,8 @@
       const end = new Date();
       const start = new Date();
       start.setDate(start.getDate() - 30);
-      endEl.value = end.toISOString().slice(0, 10);
-      startEl.value = start.toISOString().slice(0, 10);
+      endEl.value = localDateStr(end);
+      startEl.value = localDateStr(start);
     }
     openModal('cashAuditHistoryModal');
     loadCashAuditHistory();
@@ -544,7 +573,8 @@
 
     viewCtx = {
       date: r.audit_date,
-      draft: { cashier: r.cashier || '', shift: r.shift || '', opening: r.opening_cash, note: r.note || '', userRemark: r.user_remark || '', qty, remarks },
+      draft: { cashier: r.cashier || '', shift: r.shift || '', opening: r.opening_cash, note: r.note || '',
+        userRemark: (Number(r.calc_version) >= 2) ? [r.user_remark, r.note].filter((x) => x && String(x).trim()).join(' | ') : (r.user_remark || ''), qty, remarks },
       cash: Number(r.cash_sales) || 0,
       electronic: Number(r.electronic_sales) || 0,
       credit: Number(r.credit_sales) || 0,
@@ -583,9 +613,7 @@
 
   function fmtDateTimeCA(dt) {
     if (!dt) return '—';
-    const d = new Date(String(dt).replace(' ', 'T'));
-    if (isNaN(d)) return dt;
-    return d.toLocaleDateString('en-GB') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return fmtDateTime24(dt);
   }
 
   /* ------------------------------------------------------------------ opening cash / float */
@@ -643,8 +671,7 @@
         <div class="cf-total"><span>Current float</span><b>${num(s.total)}</b></div>
       </div>
       ${openingNote}
-      ${items ? `<ul class="cf-list">${items}</ul>` : '<p class="muted cf-empty">Nothing recorded for this date yet.</p>'}
-      `;
+      ${items ? `<ul class="cf-list">${items}</ul>` : '<p class="muted cf-empty">Nothing recorded for this date yet.</p>'}`;
   }
 
   async function saveFloatEntry() {
@@ -683,7 +710,7 @@
       const start = new Date();
       start.setDate(start.getDate() - 30);
       endEl.value = dayToday();
-      startEl.value = start.toISOString().slice(0, 10);
+      startEl.value = localDateStr(start);
     }
     openModal('cashFloatHistoryModal');
     loadFloatHistory();
@@ -829,7 +856,7 @@
       const start = new Date();
       start.setDate(start.getDate() - 30);
       endEl.value = dayToday();
-      startEl.value = start.toISOString().slice(0, 10);
+      startEl.value = localDateStr(start);
     }
     openModal('bankDepositHistoryModal');
     loadBankDepositHistory();
@@ -861,8 +888,7 @@
 
     const isAdmin = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.role === 'admin');
     tbody.innerHTML = rows.map((r) => {
-      const t = new Date(String(r.created_at).replace(' ', 'T'));
-      const time = isNaN(t) ? '—' : t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const time = fmtTime24(String(r.created_at));
       return `<tr>
         <td>${fmtDate(r.deposit_date)}</td>
         <td class="muted">${time}</td>
@@ -898,40 +924,48 @@
 
   const neg = (n) => (n ? '−' + num(n) : num(0));
 
-  /** Plain-text explanations of how credit/debt changed Expected Cash (shared by the screen, PDF and Excel).
-   *  Each note is { lead, rest }: the lead is shown in bold. */
+  const COUNT_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+
+  /** Plain-text explanations of how credit sales and collections changed Expected Closing Cash
+   *  (shared by the screen, PDF and Excel). Each note is { lead, rest }: the lead is shown in bold. */
   function debtNotes(ctx) {
     if ((ctx.version || 2) < 2) return [];
     const notes = [];
     if (ctx.credit > 0) {
       notes.push({
-        lead: 'Credit sales: ' + money(ctx.credit),
-        rest: ' of the Total Sales was sold on credit. No money was received for it, so it is taken out of Expected Cash.',
+        lead: 'Credit sales:',
+        rest: ' ' + money(ctx.credit) + ' is included in Total Sales but remains unpaid, so it is deducted when calculating Expected Closing Cash.',
       });
     }
     (ctx.debtPayments || []).forEach((p) => {
       const who = p.customer_name || 'A customer';
+      const paid = Number(p.amount_paid) || 0;
+      const before = Number(p.previous_debt) || 0;
       const left = Number(p.remaining_debt) || 0;
+      const full = left <= 0;
+      const balance = full ? 'the outstanding balance of ' + money(before) : money(paid) + ' of the outstanding balance of ' + money(before);
       if (p.method === 'online') {
+        const via = p.online_method || 'Online';
         notes.push({
-          lead: '',
-          rest: who + ' paid ' + money(p.amount_paid) + ' of the previous ' + money(p.previous_debt) + ' debt online'
-            + (p.online_method ? ' (' + p.online_method + ')' : '') + '. This is not cash in the drawer, so Expected Cash was not increased. Remaining debt: '
-            + money(left) + '.',
+          lead: via + ' debt collection:',
+          rest: ' ' + who + ' paid ' + balance + ' through ' + via + '. '
+            + (full ? 'The debt is fully cleared, but this payment does not increase cash in the drawer.'
+                    : 'Remaining balance: ' + money(left) + '. This payment does not increase cash in the drawer.'),
         });
       } else {
         notes.push({
-          lead: 'Expected Cash increased by ' + money(p.added_to_expected),
-          rest: ' because ' + who + ' paid ' + money(p.amount_paid) + ' of the previous ' + money(p.previous_debt)
-            + ' debt. Remaining debt: ' + money(left) + '.' + (left <= 0 ? ' The debt is cleared.' : ''),
+          lead: 'Cash debt collection:',
+          rest: ' ' + who + ' paid ' + balance + ' in cash, increasing Expected Closing Cash by the same amount. '
+            + (full ? 'The debt is fully cleared.' : 'Remaining balance: ' + money(left) + '.'),
         });
       }
     });
     if (ctx.outstanding > 0) {
-      const n = ctx.debtors;
+      const n = Number(ctx.debtors) || 0;
+      const who = n ? (n <= 10 ? COUNT_WORDS[n] : String(n)) + (n === 1 ? ' customer still owes ' : ' customers still owe ') : 'Customers still owe ';
       notes.push({
-        lead: 'Outstanding customer debts: ' + money(ctx.outstanding),
-        rest: (n ? ' (' + n + ' customer' + (n === 1 ? '' : 's') + ')' : '') + ' still owed by customers. This is not part of Expected Cash until it is paid.',
+        lead: 'Outstanding receivables:',
+        rest: ' ' + who + money(ctx.outstanding) + '. This amount is excluded from Expected Closing Cash until collected in cash.',
       });
     }
     return notes;
@@ -940,24 +974,30 @@
   function debtNotesHTML(ctx) {
     const notes = debtNotes(ctx);
     if (!notes.length) return '';
-    return `<div class="ca-notebox"><div class="ca-lbl">Notes on Expected Cash:</div><ul>${
+    return `<div class="ca-notebox"><div class="ca-lbl">Notes on Expected Closing Cash:</div><ul>${
       notes.map((n) => `<li>${n.lead ? '<b>' + esc(n.lead) + '</b>' : ''}${esc(n.rest)}</li>`).join('')}</ul></div>`;
+  }
+
+  /** "Ally Juma (M-PESA)" for a payment made online, "Ally Juma (In Hand)" for one paid in cash. */
+  function payerLabel(p) {
+    const how = p.method === 'online' ? (p.online_method || 'Online') : 'In Hand';
+    return (p.customer_name || 'A customer') + ' (' + how + ')';
   }
 
   function debtTableHTML(ctx) {
     const pays = ctx.debtPayments || [];
     if ((ctx.version || 2) < 2 || !pays.length) return '';
     const rows = pays.map((p) => `<tr>
-        <td>${esc(p.customer_name || 'A customer')}${p.method === 'online' ? ' <i>(online)</i>' : ''}</td>
+        <td>${esc(payerLabel(p))}</td>
         <td class="ca-r">${num(p.previous_debt)}</td>
         <td class="ca-r">${num(p.amount_paid)}</td>
         <td class="ca-r">${num(p.remaining_debt)}</td>
         <td class="ca-r">${num(p.added_to_expected)}</td>
       </tr>`).join('');
-    return `<div class="ca-section ca-sub">Debt Payments Received</div>
+    return `<div class="ca-section ca-sub">Collections from Outstanding Customer Receivables</div>
       <table class="ca-table ca-debts">
         <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
-        <tr class="ca-th"><td class="ca-l">Customer</td><td>Previous Debt</td><td>Amount Paid</td><td>Remaining Debt</td><td>Added to Expected Cash</td></tr>
+        <tr class="ca-th"><td class="ca-l">Customer</td><td>Previous Balance (TZS)</td><td>Amount Received (TZS)</td><td>Outstanding Balance (TZS)</td><td>Added to Expected Closing Cash (TZS)</td></tr>
         ${rows}
       </table>`;
   }
@@ -975,10 +1015,7 @@
     if (c.remaining < 0) {
       return `<div class="ca-tomorrow ca-warn">The bank deposits (${money(c.deposit)}) are more than the cash counted (${money(c.counted)}). Please check the cash count or the deposits.</div>`;
     }
-    if (c.counted <= 0 && c.deposit <= 0) {
-      return `<div class="ca-tomorrow">Count the cash in Part A to see the Total Cash, then record what was banked with the Bank Deposit button. The Remaining Cash becomes tomorrow's Opening Cash.</div>`;
-    }
-    return `<div class="ca-tomorrow">Tomorrow's Opening Cash: <b>${money(c.remaining)}</b> <i>(the Remaining Cash is carried forward automatically and can still be adjusted from Opening Cash)</i></div>`;
+    return `<div class="ca-tomorrow">Tomorrow’s Opening Cash: <b>${money(c.remaining)}</b> <i>(The closing cash balance is carried forward automatically and can be adjusted in the Opening Cash field.)</i></div>`;
   }
 
   function bankBlockHTML(editable, ctx, c) {
@@ -1039,7 +1076,7 @@
         <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>
         <tr class="ca-th"><td class="ca-l">Denomination (TZS)</td><td>Quantity</td><td>Amount (TZS)</td><td>Remarks</td></tr>
         ${rows}
-        <tr><td colspan="2" class="ca-strong">TOTAL CASH COUNTED</td>
+        <tr><td colspan="2" class="ca-strong">Total Cash In Hand</td>
             <td class="ca-r ca-strong" data-out="counted">${num(c.counted)}</td><td></td></tr>
       </table>
 
@@ -1063,10 +1100,10 @@
         <tr class="ca-th"><td class="ca-l">Description</td><td>Amount (TZS)</td></tr>
         <tr><td>Opening Cash (<i>Physical Float</i>)</td>
             <td class="ca-r">${editable ? '<button type="button" class="ca-float-link" data-act="float">Set / adjust</button> ' : ''}<span data-out="opening">${(editable || c.opening) ? num(c.opening) : ''}</span></td></tr>
-        <tr><td>Cash Physical Sales</td><td class="ca-r" data-out="cash">${num(ctx.cash)}</td></tr>
+        <tr><td>Cash In Hand Sales</td><td class="ca-r" data-out="cash">${num(ctx.cash)}</td></tr>
         <tr><td>Electronic Sales (<i>Mixx by Yas/M-Pesa/Bank</i>)</td><td class="ca-r" data-out="electronic">${num(ctx.electronic)}</td></tr>
-        <tr><td>On Credit Sales</td><td class="ca-r" data-out="credit">${num(ctx.credit)}</td></tr>
-        <tr><td>Total Sales (<i>Cash Physical Sales + Electronic Sales + On Credit Sales</i>)</td>
+        <tr><td>Credit Sales</td><td class="ca-r" data-out="credit">${num(ctx.credit)}</td></tr>
+        <tr><td>Total Sales (<i>Cash In Hand Sales + Electronic Sales + Credit Sales</i>)</td>
             <td class="ca-r ca-strong" data-out="total">${num(c.total)}</td></tr>
         <tr><td>Expenses</td><td class="ca-r" data-out="expenses">${num(ctx.expenses)}</td></tr>
         <tr><td>Expected Cash <i>((Opening Float + Total Sales) - Expenses)</i></td>
@@ -1083,19 +1120,19 @@
         <tr class="ca-th"><td class="ca-l">Description</td><td>Amount (TZS)</td></tr>
         <tr><td>Opening Cash (<i>Physical Float</i>)<span data-html="openingSrc">${openingSrcHTML(ctx, editable)}</span></td>
             <td class="ca-r">${editable ? '<button type="button" class="ca-float-link" data-act="float">Set / adjust</button> ' : ''}<span data-out="opening">${(editable || c.opening) ? num(c.opening) : ''}</span></td></tr>
-        <tr><td>Cash Physical Sales</td><td class="ca-r" data-out="cash">${num(ctx.cash)}</td></tr>
+        <tr><td>Cash In Hand Sales</td><td class="ca-r" data-out="cash">${num(ctx.cash)}</td></tr>
         <tr><td>Electronic Sales (<i>Mixx by Yas/M-Pesa/Bank</i>)</td><td class="ca-r" data-out="electronic">${num(ctx.electronic)}</td></tr>
-        <tr><td>On Credit Sales</td><td class="ca-r" data-out="credit">${num(ctx.credit)}</td></tr>
-        <tr><td>Total Sales, including credit (<i>Cash Physical Sales + Electronic Sales + On Credit Sales</i>)</td>
+        <tr><td>Credit Sales</td><td class="ca-r" data-out="credit">${num(ctx.credit)}</td></tr>
+        <tr><td>Total Sales (<i>Cash In Hand Sales + Electronic Sales + Credit Sales</i>)</td>
             <td class="ca-r ca-strong" data-out="total">${num(c.total)}</td></tr>
-        <tr><td>Less: On Credit Sales (<i>owed by customers, not received</i>)</td><td class="ca-r" data-out="lessCredit">${neg(ctx.credit)}</td></tr>
-        <tr><td>Add: Previous Debts Paid in Cash (<i>collected on this date</i>)</td><td class="ca-r" data-out="debtCash">${num(c.debtCash)}</td></tr>
-        <tr><td>Actual Cash Available (<i>Opening Cash + Total Sales - On Credit Sales + Debts Paid in Cash</i>)</td>
+        <tr><td>Less: Credit Sales (<i>owed by customers</i>)</td><td class="ca-r" data-out="lessCredit">${neg(ctx.credit)}</td></tr>
+        <tr><td>Add: Cash Collections from Previous Credit Sales (<i>Received on This Date</i>)</td><td class="ca-r" data-out="debtCash">${num(c.debtCash)}</td></tr>
+        <tr><td>Cash Available (<i>Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales</i>)</td>
             <td class="ca-r ca-strong" data-out="available">${num(c.available)}</td></tr>
         <tr><td>Expenses</td><td class="ca-r" data-out="expenses">${num(ctx.expenses)}</td></tr>
-        <tr><td>Expected Cash <i>(Actual Cash Available - Expenses)</i></td>
+        <tr><td>Expected Closing Cash (<i>Cash Available − Cash Expenses</i>)</td>
             <td class="ca-r ca-strong" data-out="expected">${num(c.expected)}</td></tr>
-        <tr><td>Outstanding Customer Debts (<i>still owed by customers; not part of Expected Cash</i>)</td>
+        <tr><td>Outstanding Customer Receivables (<i>Unpaid Balances; Excluded from Expected Closing Cash</i>)</td>
             <td class="ca-r" data-out="outstanding">${num(ctx.outstanding)}</td></tr>
       </table>
 
@@ -1104,7 +1141,6 @@
 
       <table class="ca-table ca-recon ca-remarks-tbl">
         <colgroup><col class="c1"><col class="c2"></colgroup>
-        ${remarksRowHTML(editable, d)}
         <tr><td colspan="2" class="ca-remarks-box ca-user-remark"><span class="ca-lbl">User Remark:</span>${editable
           ? ' <span class="ca-hint">(optional - write anything you need to explain or record about this audit)</span>'
             + `<textarea class="ca-in" data-k="userRemark" rows="2" maxlength="1000">${esc(d.userRemark || '')}</textarea>`
@@ -1395,7 +1431,7 @@
     };
 
     /* ---- sheet model --------------------------------------------------- */
-    const COLS = 'ABCD';
+    const COLS = 'ABCDE';
     const grid = {};
     const heights = {};
     const merges = [];
@@ -1444,7 +1480,7 @@
       heights[r] = 20;
     });
     const rTot = 8 + DENOMS.length; // 16
-    str(0, rTot, 'TOTAL CASH COUNTED', S.totLabel);
+    str(0, rTot, 'Total Cash In Hand', S.totLabel);
     merge(rTot, 0, rTot, 1, S.totLabel);
     numc(2, rTot, c.counted, S.totAmt, `SUM(C8:C${rTot - 1})`);
     blank(3, rTot, S.rem);
@@ -1464,10 +1500,10 @@
       // Sheets saved before the credit/debt upgrade: exactly as they were saved.
       const lines = [
         [[{ t: 'Opening Cash ' }, { t: '(Physical Float)', i: true }], c.opening, S.amt, null],
-        [[{ t: 'Cash Physical Sales' }], ctx.cash, S.amt, null],
+        [[{ t: 'Cash In Hand Sales' }], ctx.cash, S.amt, null],
         [[{ t: 'Electronic Sales ' }, { t: '(Mixx by Yas/M-Pesa/Bank)', i: true }], ctx.electronic, S.amt, null],
-        [[{ t: 'On Credit Sales' }], ctx.credit, S.amt, null],
-        [[{ t: 'Total Sales ' }, { t: '(Cash Physical Sales + Electronic Sales + On Credit Sales)', i: true }], c.total, S.amtBold, 'SUM(C{r1}:C{r3})'],
+        [[{ t: 'Credit Sales' }], ctx.credit, S.amt, null],
+        [[{ t: 'Total Sales ' }, { t: '(Cash In Hand Sales + Electronic Sales + Credit Sales)', i: true }], c.total, S.amtBold, 'SUM(C{r1}:C{r3})'],
         [[{ t: 'Expenses' }], ctx.expenses, S.amt, null],
         [[{ t: 'Expected Cash ' }, { t: '((Opening Float + Total Sales) - Expenses)', i: true }], c.expected, S.amtBold, '(C{r0}+C{r4})-C{r5}'],
       ];
@@ -1487,16 +1523,16 @@
     } else {
       const L = [
         { key: 'opening', label: [{ t: 'Opening Cash ' }, { t: '(Physical Float)', i: true }], val: c.opening },
-        { key: 'cash', label: [{ t: 'Cash Physical Sales' }], val: ctx.cash },
+        { key: 'cash', label: [{ t: 'Cash In Hand Sales' }], val: ctx.cash },
         { key: 'elec', label: [{ t: 'Electronic Sales ' }, { t: '(Mixx by Yas/M-Pesa/Bank)', i: true }], val: ctx.electronic },
-        { key: 'credit', label: [{ t: 'On Credit Sales' }], val: ctx.credit },
-        { key: 'total', label: [{ t: 'Total Sales, including credit ' }, { t: '(Cash Physical + Electronic + On Credit Sales)', i: true }], val: c.total, bold: true, f: (R) => `SUM(C${R.cash}:C${R.credit})` },
-        { key: 'less', label: [{ t: 'Less: On Credit Sales ' }, { t: '(owed by customers, not received)', i: true }], val: -ctx.credit, f: (R) => `-C${R.credit}` },
-        { key: 'debt', label: [{ t: 'Add: Previous Debts Paid in Cash ' }, { t: '(collected on this date)', i: true }], val: c.debtCash },
-        { key: 'avail', label: [{ t: 'Actual Cash Available ' }, { t: '(Opening Cash + Total Sales - On Credit Sales + Debts Paid in Cash)', i: true }], val: c.available, bold: true, f: (R) => `C${R.opening}+C${R.total}+C${R.less}+C${R.debt}` },
+        { key: 'credit', label: [{ t: 'Credit Sales' }], val: ctx.credit },
+        { key: 'total', label: [{ t: 'Total Sales ' }, { t: '(Cash In Hand Sales + Electronic Sales + Credit Sales)', i: true }], val: c.total, bold: true, f: (R) => `SUM(C${R.cash}:C${R.credit})` },
+        { key: 'less', label: [{ t: 'Less: Credit Sales ' }, { t: '(owed by customers)', i: true }], val: -ctx.credit, f: (R) => `-C${R.credit}` },
+        { key: 'debt', label: [{ t: 'Add: Cash Collections from Previous Credit Sales ' }, { t: '(Received on This Date)', i: true }], val: c.debtCash },
+        { key: 'avail', label: [{ t: 'Cash Available ' }, { t: '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales)', i: true }], val: c.available, bold: true, f: (R) => `C${R.opening}+C${R.total}+C${R.less}+C${R.debt}` },
         { key: 'exp', label: [{ t: 'Expenses' }], val: ctx.expenses },
-        { key: 'expected', label: [{ t: 'Expected Cash ' }, { t: '(Actual Cash Available - Expenses)', i: true }], val: c.expected, bold: true, f: (R) => `C${R.avail}-C${R.exp}` },
-        { key: 'out', label: [{ t: 'Outstanding Customer Debts ' }, { t: '(still owed by customers; not part of Expected Cash)', i: true }], val: ctx.outstanding || 0 },
+        { key: 'expected', label: [{ t: 'Expected Closing Cash ' }, { t: '= Cash Available − Cash Expenses', i: true }], val: c.expected, bold: true, f: (R) => `C${R.avail}-C${R.exp}` },
+        { key: 'out', label: [{ t: 'Outstanding Customer Receivables ' }, { t: '(Unpaid Balances; Excluded from Expected Closing Cash)', i: true }], val: ctx.outstanding || 0 },
       ];
       const R = {};
       L.forEach((ln, i) => { R[ln.key] = r0 + i; });
@@ -1508,11 +1544,11 @@
       });
       let r = r0 + L.length;
 
-      // ---- notes on how credit/debt changed Expected Cash
+      // ---- notes on how credit sales and collections changed Expected Closing Cash
       const notes = debtNotes(ctx);
       if (notes.length) {
         r += 1;
-        str(0, r, 'Notes on Expected Cash:', S.section); heights[r] = 20; r += 1;
+        str(0, r, 'Notes on Expected Closing Cash:', S.section); heights[r] = 20; r += 1;
         notes.forEach((n) => {
           const runs = n.lead ? [{ t: n.lead, b: true }, { t: n.rest }] : [{ t: n.rest }];
           rich(0, r, runs, S.desc); merge(r, 0, r, 3, S.desc);
@@ -1525,25 +1561,25 @@
       const pays = ctx.debtPayments || [];
       if (pays.length) {
         r += 1;
-        str(0, r, 'Debt Payments Received', S.section); heights[r] = 20; r += 1;
+        str(0, r, 'Collections from Outstanding Customer Receivables', S.section); heights[r] = 20; r += 1;
         str(0, r, 'Customer', S.headL);
-        str(1, r, 'Previous Debt', S.headC);
-        str(2, r, 'Amount Paid', S.headC);
-        str(3, r, 'Remaining Debt / Added to Expected Cash', S.headC);
-        heights[r] = 32; r += 1;
+        str(1, r, 'Previous Balance (TZS)', S.headC);
+        str(2, r, 'Amount Received (TZS)', S.headC);
+        str(3, r, 'Outstanding Balance (TZS)', S.headC);
+        str(4, r, 'Added to Expected Closing Cash (TZS)', S.headC);
+        heights[r] = 46; r += 1;
         pays.forEach((p) => {
-          str(0, r, (p.customer_name || 'A customer') + (p.method === 'online' ? ' (online)' : ''), S.desc);
+          str(0, r, payerLabel(p), S.desc);
           numc(1, r, Number(p.previous_debt) || 0, S.amt);
           numc(2, r, Number(p.amount_paid) || 0, S.amt);
-          str(3, r, 'Remaining ' + num(p.remaining_debt) + ' · Added ' + num(p.added_to_expected), S.rem);
+          numc(3, r, Number(p.remaining_debt) || 0, S.amt);
+          numc(4, r, Number(p.added_to_expected) || 0, S.amt);
           heights[r] = 20; r += 1;
         });
       }
 
-      // ---- remarks (the existing one, then the dedicated user remark)
+      // ---- user remark
       r += 1;
-      rich(0, r, [{ t: 'Remarks: ', b: true }, { t: d.note }], S.remBox);
-      merge(r, 0, r, 2, S.remBox); heights[r] = 50; r += 1;
       rich(0, r, [{ t: 'User Remark: ', b: true }, { t: d.userRemark || '' }], S.remBox);
       merge(r, 0, r, 2, S.remBox); heights[r] = 50; r += 1;
 
@@ -1563,7 +1599,7 @@
       numc(2, r, c.remaining, S.amtBold, `C${rBT}-C${rBD}`); heights[r] = 20; r += 1;
       rich(0, r, [{ t: 'Bank Deposit Remark: ', b: true }, { t: ctx.bankRemarkText || '' }], S.remBox);
       merge(r, 0, r, 2, S.remBox); heights[r] = 40; r += 1;
-      rich(0, r, [{ t: "Tomorrow's Opening Cash " }, { t: '(Remaining Cash carried forward)', i: true }], S.desc); merge(r, 0, r, 1, S.desc);
+      rich(0, r, [{ t: 'Tomorrow’s Opening Cash ' }, { t: '(The closing cash balance is carried forward automatically)', i: true }], S.desc); merge(r, 0, r, 1, S.desc);
       numc(2, r, Math.max(0, c.remaining), S.amtBold, `MAX(0,C${rBR})`); heights[r] = 20;
       rAfter = r;
     }
@@ -1596,10 +1632,10 @@
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="${NS_MAIN}" xmlns:r="${NS_REL}">
 <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-<dimension ref="A1:D${lastRow}"/>
+<dimension ref="A1:E${lastRow}"/>
 <sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>
 <sheetFormatPr defaultRowHeight="15"/>
-<cols><col min="1" max="1" width="46" customWidth="1"/><col min="2" max="2" width="14" customWidth="1"/><col min="3" max="3" width="20" customWidth="1"/><col min="4" max="4" width="30" customWidth="1"/></cols>
+<cols><col min="1" max="1" width="46" customWidth="1"/><col min="2" max="2" width="14" customWidth="1"/><col min="3" max="3" width="20" customWidth="1"/><col min="4" max="4" width="30" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
 <sheetData>${sheetRows.join('')}</sheetData>
 <mergeCells count="${merges.length}">${merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>
 <printOptions horizontalCentered="1"/>
