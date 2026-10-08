@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales (Mauzo) — eDESK Print &amp; Digital</title>
+    <script src="js/manifest-init.js"></script>
+    <link rel="icon" href="assets/icon-192.png">
+    <meta name="theme-color" content="#101B30">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/cash-audit.css">
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <aside class="sidebar no-print">
+            <div class="brand"><img src="assets/hero-logo.png" alt="eDESK"> </div>
+            <div class="nav-group">
+                <div class="nav-label">Overview</div>
+                <a href="dashboard.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#home"></use></svg></span> Dashboard</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Operations</div>
+                <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
+                <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
+                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="sales.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
+                <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Insights</div>
+                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
+                <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a></div>
+            <div class="nav-group admin-only">
+                <div class="nav-label">Administration</div>
+                <a href="users.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Manage Users</a>
+                <a href="audit-log.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#eye"></use></svg></span> Activity Log</a></div>
+            <div class="nav-group">
+                <div class="nav-label">Account</div>
+                <a href="profile.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg></span> My Profile</a></div>
+            <div class="sidebar-footer"><a href="#" class="nav-link js-logout"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></span> Log Out</a></div>
+        </aside>
+
+        <div class="main">
+            <div class="topbar no-print">
+                <div class="flex gap-12" style="align-items:center;">
+                    <button class="btn btn-icon btn-outline js-menu-toggle"><svg class="ui-icon"><use href="assets/icons.svg#menu"></use></svg></button>
+                    <div>
+                        <div class="page-title">Sales </div>
+                    </div>
+                </div>
+                <div class="flex gap-8" style="align-items:center;">
+                    <button class="btn btn-outline btn-sm" onclick="openCashAudit()"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg> Cash Audit</button>
+                    <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadSalesExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
+                    <button class="btn btn-primary btn-sm" onclick="openSaleModal()">+ Record Sale</button>
+                    <div class="user-chip">
+                        <div class="avatar js-user-avatar">--</div>
+                        <div>
+                            <div class="name js-user-name">—</div>
+                            <div class="role js-user-role">—</div>
+                        </div>
+                    </div>
+                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <div class="print-header">
+                    <div class="ph-top">
+                        <img src="assets/logo1.png" alt="eDESK">
+                        <div class="ph-brand">
+                            <div class="doc-brand-name">eDesk<span>PRINT &amp; DIGITAL</span></div>
+                            <div class="doc-brand-tagline">Print. Apply. Create.</div>
+                            <div class="doc-brand-address">Iyunga, Mbeya &nbsp;|&nbsp; Tel: +255 763 399 399</div>
+                        </div>
+                    </div>
+                    <div class="ph-bottom">
+                        <div class="ph-report-of">REPORT: <strong>Sales (Mauzo)</strong></div>
+                        <div class="meta" id="print-date-sales"></div>
+                    </div>
+                </div>
+                <div class="stat-grid mt-8 no-print" style="margin-bottom:16px;">
+                    <div class="stat-card">
+                        <div class="label">Sales Today</div>
+                        <div class="value" id="s-total">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Transactions Today</div>
+                        <div class="value" id="s-count">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Profit Today</div>
+                        <div class="value green" id="s-profit">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">On Credit Today</div>
+                        <div class="value gold" id="s-credit">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Change Owed to Customers</div>
+                        <div class="value red" id="s-change-owed">—</div>
+                    </div>
+                </div>
+                <div class="print-only report-summary-text">
+                    <p>Total Sales (Selected Period) = <strong id="s-total-print">TZS 0</strong></p>
+                    <p>Total Profit (Selected Period) = <strong id="s-profit-print">TZS 0</strong></p>
+                    <p>Transactions (Selected Period) = <strong id="s-count-print">0</strong></p>
+                    <p>On Credit (Selected Period) = <strong id="s-credit-print">TZS 0</strong></p>
+                    <p>Customer Change Still Owed (Selected Period) = <strong id="s-change-owed-print">TZS 0</strong></p>
+                </div>
+
+                <div class="card">
+                    <div class="filter-bar no-print" style="margin-bottom:14px;">
+                        <div class="field" style="margin:0;">
+                            <label>From</label>
+                            <input type="date" id="fStart">
+                        </div>
+                        <div class="field" style="margin:0;">
+                            <label>To</label>
+                            <input type="date" id="fEnd">
+                        </div>
+                        <button class="btn btn-outline btn-sm" onclick="loadSales()">Filter</button>
+                        <button class="btn btn-outline btn-sm" onclick="resetFilter()">Today</button>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Profit</th>
+                                    <th>Payment</th>
+                                    <th>Sold By</th>
+                                    <th class="no-print">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salesBody">
+                                <tr>
+                                    <td colspan="7" class="muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="print-only doc-signature">
+                    <div class="sig-block">
+                        <div class="sig-role">Prepared By</div>
+                        <div class="sig-field"><span class="sig-field-label">Name</span><span class="sig-field-fill">&nbsp;</span></div>
+                        <div class="sig-field"><span class="sig-field-label">Signature</span><span class="sig-field-fill">&nbsp;</span></div>
+                    </div>
+                    <div class="sig-block">
+                        <div class="sig-role">Approved By</div>
+                        <div class="sig-field"><span class="sig-field-label">Name</span><span class="sig-field-fill">&nbsp;</span></div>
+                        <div class="sig-field"><span class="sig-field-label">Signature</span><span class="sig-field-fill">&nbsp;</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Record / Edit Sale Modal -->
+    <div class="modal-overlay" id="saleModal">
+        <div class="modal modal-lg">
+            <div class="modal-head">
+                <h3 id="saleModalTitle">Record a Sale</h3><button class="modal-close" onclick="closeModal('saleModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button></div>
+            <div class="modal-body">
+
+                <input type="hidden" id="s-edit-id">
+
+                <!-- ============ Add-item mini form ============ -->
+                <div class="flex gap-8" style="margin-bottom:16px;" id="saleModeToggle">
+                    <button type="button" class="btn btn-sm w-full" id="modeProductBtn" onclick="setSaleMode('product')">Product</button>
+                    <button type="button" class="btn btn-sm w-full" id="modeServiceBtn" onclick="setSaleMode('service')">Service</button>
+                </div>
+
+                <div class="field autocomplete">
+                    <label id="s-product-label">Product</label>
+                    <input type="text" id="s-product-search" placeholder="Type a product name..." autocomplete="off">
+                    <input type="hidden" id="s-product-id">
+                    <div id="s-product-suggestions" class="autocomplete-list hidden"></div>
+                    <p class="help-text">Start typing to search, then tap a result to select it.</p>
+                </div>
+
+                <div class="field hidden" id="s-type-field">
+                    <label>Description</label>
+                    <select id="s-type-select" onchange="selectVariantType()">
+                        <option value="">Select a description...</option>
+                    </select>
+                    <p class="help-text">This product has several descriptions — pick the specific one being sold.</p>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label>Quantity</label>
+                        <input type="number" id="s-qty" min="1" step="1" value="1">
+                    </div>
+                    <div class="field">
+                        <label>Unit Selling Price (TZS)</label>
+                        <input type="number" id="s-price" min="0" step="0.01">
+                        <p class="help-text" id="s-price-hint"></p>
+                    </div>
+                </div>
+                <!-- Services only: were any stock products used to provide it? -->
+                <div class="field hidden" id="s-materials-field">
+                    <label>Was any product used to provide this service?</label>
+                    <div class="flex gap-8">
+                        <button type="button" class="btn btn-primary btn-sm w-full" id="matNoBtn" onclick="setMaterialsUsed(false)">No</button>
+                        <button type="button" class="btn btn-outline btn-sm w-full" id="matYesBtn" onclick="setMaterialsUsed(true)">Yes</button>
+                    </div>
+                    <div id="s-materials-panel" class="hidden" style="margin-top:10px;">
+                        <div id="s-materials-rows"></div>
+                        <button type="button" class="btn btn-outline btn-sm w-full" onclick="addMaterialRow()">+ Add another product</button>
+                        <p class="help-text">Quantity is for <strong>one</strong> service. The customer still pays the full price &mdash; the products come out of stock and their cost only reduces profit. Tape, internet, electricity and similar costs belong in Expenses.</p>
+                    </div>
+                </div>
+
+                <p class="row-error" id="s-item-error"></p>
+                <button type="button" class="btn btn-outline w-full mt-8" onclick="addCartItem()">+ Add Item to Sale</button>
+
+                <!-- ============ Cart ============ -->
+                <div class="table-wrap mt-16">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Unit Price</th>
+                                <th>Subtotal</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartBody">
+                            <tr>
+                                <td colspan="5" class="muted">No items added yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="report-totals-row">
+                    <div class="rt-item">Grand Total<strong id="cart-grand-total">TZS 0</strong></div>
+                </div>
+
+                <form id="saleForm" class="mt-16">
+                    <div class="field">
+                        <label>Payment</label>
+                        <select id="s-payment-method">
+            <option value="cash">Cash</option>
+            <option value="credit">On Credit</option>
+          </select>
+                    </div>
+
+                    <div id="cashFields">
+                        <div class="field">
+                            <label>Cash Type</label>
+                            <select id="s-cash-type">
+              <option value="cash_in_hand">Cash in Hand</option>
+              <option value="online">Online Transaction</option>
+            </select>
+                        </div>
+                        <div class="field hidden" id="onlineMethodField">
+                            <label>Online Payment Method</label>
+                            <select id="s-online-method">
+              <option>M-Pesa</option>
+              <option>Airtel Money</option>
+              <option>Mixx by Yas</option>
+              <option>Halopesa</option>
+              <option>CRDB/NMB/Other Banks</option>
+              <option>POS/Card Payments</option>
+            </select>
+                        </div>
+                    </div>
+
+                    <div class="field hidden" id="customerChangeBox">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--navy);">
+                            <input type="checkbox" id="s-change-left" style="width:auto;margin:0;padding:0;box-shadow:none;"> Customer left change (balance due to customer)
+                        </label>
+                        <div class="hidden" id="changeAmountField" style="margin-top:8px;">
+                            <label>Customer Change (TZS)</label>
+                            <input type="number" id="s-change-amount" min="0" step="0.01" placeholder="Amount the customer did not collect">
+                                                    </div>
+                    </div>
+
+                    <div class="field hidden" id="creditDeadlineField">
+                        <label>Payment Deadline</label>
+                        <input type="date" id="s-credit-deadline">
+                        <p class="help-text">This sale will appear on the Debts (Madeni) page until it's fully paid.</p>
+                    </div>
+
+                    <div class="field">
+                        <label>Customer Name <span id="s-customer-required-note" class="hidden gold">(required for credit sales)</span></label>
+                        <input type="text" id="s-customer" placeholder="Optional for cash sales">
+                    </div>
+                    <div class="field hidden" id="customerPhoneField">
+                        <label>Customer Phone Number <span class="gold">(required for credit sales)</span></label>
+                        <input type="text" id="s-customer-phone" placeholder="e.g. 0763 399 399">
+                    </div>
+                    <p class="row-error" id="s-restriction-error"></p>
+                    <div class="field">
+                        <label>Date</label>
+                        <input type="date" id="s-date">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-full mt-8" id="saleSubmitBtn">Save Sale</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer Change modal (details + collect, all on the original sale) -->
+    <div class="modal-overlay" id="changeModal">
+        <div class="modal modal-lg">
+            <div class="modal-head">
+                <h3 id="changeModalTitle">Customer Change</h3><button class="modal-close" onclick="closeModal('changeModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button></div>
+            <div class="modal-body">
+                <div class="flex gap-8" style="align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;">
+                    <div id="chg-customer" style="font-weight:700;color:var(--navy);"></div>
+                    <div><span class="muted" style="font-size:12px;">Collection Status: </span><span id="chg-status"></span></div>
+                </div>
+                <div class="stat-grid" style="margin-bottom:10px;">
+                    <div class="stat-card"><div class="label">Customer Change</div><div class="value" id="chg-original">—</div></div>
+                    <div class="stat-card"><div class="label">Amount Collected</div><div class="value green" id="chg-collected">—</div></div>
+                    <div class="stat-card"><div class="label">Remaining Change</div><div class="value red" id="chg-remaining">—</div></div>
+                </div>
+                <p class="help-text" id="chg-last" style="margin-bottom:10px;"></p>
+
+                <div class="table-wrap" id="chg-history-wrap">
+                    <table>
+                        <thead><tr><th>Collected On</th><th>Amount</th><th>Note</th><th>Paid By</th></tr></thead>
+                        <tbody id="chg-history"></tbody>
+                    </table>
+                </div>
+
+                <div id="chg-collect-box" class="mt-16">
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Amount Collected Now (TZS)</label>
+                            <input type="number" id="chg-amount" min="0" step="0.01">
+                        </div>
+                        <div class="field">
+                            <label>Date Collected</label>
+                            <input type="date" id="chg-date">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Note (optional)</label>
+                        <input type="text" id="chg-note" maxlength="200" placeholder="">
+                    </div>
+                    <p class="row-error" id="chg-error"></p>
+                    <button type="button" class="btn btn-primary w-full" id="chg-submit" onclick="submitChangeCollection()">Mark as Collected</button>
+                                    </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/guard.js"></script>
+    <script src="js/sales.js"></script>
+    <script src="js/cash-audit.js"></script>
+</body>
+
+</html>
