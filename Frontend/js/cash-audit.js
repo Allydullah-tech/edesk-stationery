@@ -4,17 +4,22 @@
  *
  *  Part A - cash count: the person types how many notes/coins of each
  *           denomination; the Amount column and the total fill in by themselves.
+ *           Below the cash in hand, the money that came in ONLINE (online sales + previous debts paid online)
+ *           is filled in automatically, and the TOTAL COUNTED = cash in hand + online.
  *  Part B - reconciliation: Opening Cash comes from the Opening Cash screen (or is carried over
  *           automatically from the previous day's Remaining Cash); everything else is pulled from
  *           the Sales, Debt payments and Expenses recorded on that day. Credit sales are counted in
  *           Total Sales but taken back out of Expected Cash; debts customers paid in cash are added.
  *           It also holds the Bank Deposit & Closing Cash block (Total Cash - Bank Deposit = Remaining
  *           Cash, which becomes tomorrow's Opening Cash).
+ *           Short / Over = Part A total counted (in hand + online) compared with Part B Expected Closing Cash,
+ *           so online money is never reported as a shortage.
  *
  * Download as PDF  -> prints ONLY the sheet (choose "Save as PDF" in the print dialog).
  * Download as Excel -> a real .xlsx (formulas included), built right here in the browser.
  *
- * Needs (already on the Sales page): api.js, ui.js, guard.js, sales.js.
+ * Runs on its own page (cash-audit.html, which has an element #cashAuditPageMount).
+ * Needs: api.js, ui.js, guard.js.
  */
 (function () {
   'use strict';
@@ -68,7 +73,7 @@
 
   function newDraft() {
     const u = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER : null;
-    return { cashier: u ? (u.full_name || '') : '', shift: '', opening: '', note: '', userRemark: '', qty: {}, remarks: {} };
+    return { cashier: u ? (u.full_name || '') : '', shift: '', opening: '', note: '', userRemark: '', qty: {}, remarks: {}, onlineSales: '', onlineDebt: '' };
   }
 
   function qtyOf(v, ctx) {
@@ -83,6 +88,7 @@
    *
    *  version 2 (all new sheets):
    *    Actual Cash Available = Opening + (Total Sales - On Credit Sales) + Debts collected in cash
+   *                            [+ Debts collected online - version 3 only]
    *                            - Customer change paid out today for earlier days' change
    *    Expected Cash         = (Actual Cash Available + Outstanding Customer Change) - Expenses
    *  (customer change is money the shop owes a customer, never part of sales or of customer debts;
@@ -105,12 +111,22 @@
     // Sheets saved by the first version of this feature only stored "left" and "paid"; those two give the same Expected Cash.
     const changeDay = ctx.changeDayOutstanding != null ? (Number(ctx.changeDayOutstanding) || 0) : (Number(ctx.changeHeld) || 0);
     const changeOut = ctx.changePaidPrior != null ? (Number(ctx.changePaidPrior) || 0) : (Number(ctx.changeCollected) || 0);
+    // version 3: debts customers paid ONLINE also came in, so they are part of what is available and expected.
+    const debtOnline = version >= 3 ? (Number(ctx.debtOnline) || 0) : 0;
     const received = total - ctx.credit;                 // sales that actually came in (not owed by customers)
-    const available = opening + received + debtCash - changeOut; // actual cash available
+    const available = opening + received + debtCash + debtOnline - changeOut; // actual cash available
     const expected = (available + changeDay) - ctx.expenses;
     const deposit = Number(ctx.bankDeposit) || 0;
     const remaining = counted - deposit;                 // cash left at the office = tomorrow's opening cash
-    return { version, counted, opening, total, received, debtCash, changeDay, changeOut, available, expected, deposit, remaining };
+    // Part A also counts the money that came in online (online sales + debts paid online) - version 3 only.
+    // The online amounts are physically verified and typed in by the person (what was REALLY received), not taken from the system.
+    // Only old saved sheets that never stored a typed amount (ctx.onlineLegacy) fall back to the system figures.
+    const onlineSalesCounted = version >= 3 ? (ctx.onlineLegacy ? (Number(ctx.electronic) || 0) : Math.max(0, Number(d.onlineSales) || 0)) : 0;
+    const onlineDebtCounted = version >= 3 ? (ctx.onlineLegacy ? debtOnline : Math.max(0, Number(d.onlineDebt) || 0)) : 0;
+    const online = onlineSalesCounted + onlineDebtCounted;
+    const countedAll = counted + online;                 // Total Counted = in hand + online
+    const variance = countedAll - expected;              // negative = Short, positive = Over
+    return { version, counted, opening, total, received, debtCash, debtOnline, onlineSalesCounted, onlineDebtCounted, online, countedAll, variance, changeDay, changeOut, available, expected, deposit, remaining };
   }
 
   /* ------------------------------------------------------------------ DOM */
@@ -118,12 +134,7 @@
     if (built) return;
     built = true;
 
-    document.body.insertAdjacentHTML('beforeend', `
-      <div class="modal-overlay" id="cashAuditModal">
-        <div class="modal modal-xl">
-          <div class="modal-head">
-            <h3>Cash Audit — Daily Cash Closing</h3>
-            <div class="ca-head-actions">
+    const headButtons = `
               <button type="button" class="btn btn-outline btn-sm" id="caFloatBtn">
                 <svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg> Opening Cash
               </button>
@@ -136,19 +147,43 @@
               <button type="button" class="btn btn-outline btn-sm" id="caDownloadBtn">
                 <svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download
               </button>
-              <button type="button" class="btn btn-primary btn-sm" id="caSaveBtn">Save</button>
+              <button type="button" class="btn btn-primary btn-sm" id="caSaveBtn">Save</button>`;
+    const sheetBody = `
+            <p class="ca-status" id="caStatus"></p>
+            <div class="ca-scroll"><div id="cashAuditSheet"></div></div>`;
+
+    // Cash Audit now lives on its own page (cash-audit.html). If that page's mount point is there the sheet is
+    // drawn straight into the page; otherwise it falls back to the old pop-up window.
+    const pageMount = document.getElementById('cashAuditPageMount');
+    let mainHTML = '';
+    if (pageMount) {
+      pageMount.innerHTML = `
+        <div class="ca-page">
+          <div class="ca-page-head">
+            <h3>Daily Cash Closing</h3>
+            <div class="ca-head-actions">${headButtons}</div>
+          </div>
+          <div class="ca-page-body">${sheetBody}</div>
+        </div>`;
+    } else {
+      mainHTML = `
+      <div class="modal-overlay" id="cashAuditModal">
+        <div class="modal modal-xl">
+          <div class="modal-head">
+            <h3>Cash Audit — Daily Cash Closing</h3>
+            <div class="ca-head-actions">${headButtons}
               <button type="button" class="modal-close" id="caCloseBtn" title="Close">
                 <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
               </button>
             </div>
           </div>
-          <div class="modal-body">
-            <p class="ca-status" id="caStatus"></p>
-            <div class="ca-scroll"><div id="cashAuditSheet"></div></div>
-          </div>
+          <div class="modal-body">${sheetBody}</div>
         </div>
       </div>
+`;
+    }
 
+    document.body.insertAdjacentHTML('beforeend', mainHTML + `
       <div class="modal-overlay" id="cashAuditHistoryModal">
         <div class="modal modal-xl">
           <div class="modal-head">
@@ -177,7 +212,7 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Date</th><th>Cashier</th><th>Shift</th><th>Total Cash</th><th>Expected</th>
+                    <th>Date</th><th>Cashier</th><th>Shift</th><th>Total Counted</th><th>Expected</th>
                     <th>Variance</th><th>Bank Deposit</th><th>Remaining Cash</th><th>Remarks</th>
                     <th>Saved By</th><th>Saved At</th><th>Actions</th>
                   </tr>
@@ -204,6 +239,24 @@
           </div>
           <div class="modal-body">
             <div class="ca-scroll"><div id="cashAuditViewSheet"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="cashAuditEditModal">
+        <div class="modal modal-xl">
+          <div class="modal-head">
+            <h3>Edit Cash Audit — <span id="caeTitle"></span></h3>
+            <div class="ca-head-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="caeSaveBtn">Save changes</button>
+              <button type="button" class="modal-close" id="caeCloseBtn" title="Close">
+                <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div class="modal-body">
+            <p class="ca-status" id="caeStatus">Fix the cash count, online amounts, cashier, shift or remarks, then press “Save changes”. The sales, expenses and expected cash stay as they were saved. This edit is recorded in the Activity Log.</p>
+            <div class="ca-scroll"><div id="cashAuditEditSheet"></div></div>
           </div>
         </div>
       </div>
@@ -246,6 +299,7 @@
                 <input type="text" id="cfNote" maxlength="255" placeholder="e.g. change added, cash taken to bank">
               </div>
               <button type="button" class="btn btn-primary" id="cfSaveBtn">Save</button>
+              <button type="button" class="btn btn-outline" id="cfCancelEditBtn" style="display:none;">Cancel</button>
             </div>
           </div>
         </div>
@@ -311,6 +365,11 @@
           </div>
           <div class="modal-body">
             <p class="ca-status" id="bdDate"></p>
+            <div class="field">
+              <label>Deposit Date</label>
+              <input type="date" id="bdDateInput">
+
+            </div>
             <div id="bdSummary" class="cf-summary"></div>
             <div class="cf-form">
               <div class="field">
@@ -320,6 +379,15 @@
               <div class="field">
                 <label>Bank Deposit Remark (optional)</label>
                 <textarea id="bdRemark" rows="2" maxlength="1000" placeholder="e.g. Deposited today's excess cash to the boss's bank account."></textarea>
+              </div>
+              <div class="field">
+                <label>Bank Receipt Photo (Important)</label>
+                <input type="file" id="bdReceipt" accept="image/*" class="hidden">
+                <button type="button" class="btn btn-outline btn-sm" id="bdReceiptBtn">
+                  <svg class="ui-icon"><use href="assets/icons.svg#upload"></use></svg> Attach receipt photo
+                </button>
+                <div id="bdReceiptPreview"></div>
+                <p class="help-text">A clear photo of the bank slip is proof of the deposit and helps sort out mistakes later.</p>
               </div>
               <button type="button" class="btn btn-primary" id="bdSaveBtn">Save Bank Deposit</button>
             </div>
@@ -356,13 +424,27 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Date</th><th>Time</th><th>Saved By</th><th>Total Cash</th><th>Bank Deposit</th>
-                    <th>Remaining Cash</th><th>Deposit Remark</th><th>Cash Audit Remark</th><th>Actions</th>
+                    <th>Deposit Date</th><th>Recorded</th><th>Saved By</th><th>Total Cash</th><th>Bank Deposit</th>
+                    <th>Remaining Cash</th><th>Receipt</th><th>Deposit Remark</th><th>Cash Audit Remark</th><th>Actions</th>
                   </tr>
                 </thead>
-                <tbody id="bdhBody"><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+                <tbody id="bdhBody"><tr><td colspan="10" class="muted">Loading...</td></tr></tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-overlay" id="bankReceiptModal">
+        <div class="modal">
+          <div class="modal-head">
+            <h3>Bank Receipt</h3>
+            <button type="button" class="modal-close" id="bdrCloseBtn" title="Close">
+              <svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg>
+            </button>
+          </div>
+          <div class="modal-body bd-rcpt-view">
+            <img id="bdrImg" alt="Bank deposit receipt">
+            <p class="ca-note"><a id="bdrOpen" href="#" target="_blank" rel="noopener">Open full size</a></p>
           </div>
         </div>
       </div>
@@ -379,9 +461,11 @@
       else if (k === 'rem') d.remarks[t.dataset.v] = t.value;
       else if (k === 'cashier') d.cashier = t.value;
       else if (k === 'shift') d.shift = t.value;
+      else if (k === 'onlineSales') d.onlineSales = t.value;
+      else if (k === 'onlineDebt') d.onlineDebt = t.value;
       else if (k === 'note') d.note = t.value;
       else if (k === 'userRemark') d.userRemark = t.value;
-      if (k === 'qty') refreshOutputs();
+      if (k === 'qty' || k === 'onlineSales' || k === 'onlineDebt') refreshOutputs();
     });
 
     box.addEventListener('change', (e) => {
@@ -392,7 +476,8 @@
       }
     });
 
-    document.getElementById('caCloseBtn').addEventListener('click', () => closeModal('cashAuditModal'));
+    const caCloseBtn = document.getElementById('caCloseBtn');
+    if (caCloseBtn) caCloseBtn.addEventListener('click', () => closeModal('cashAuditModal'));
     document.getElementById('caDownloadBtn').addEventListener('click', function () {
       if (!state || !state.ready) { toast('Please wait — the sales for this day are still loading.', 'error'); return; }
       openDownloadMenu(this, printAudit, downloadAuditExcel);
@@ -408,12 +493,37 @@
     document.getElementById('cfHistoryBtn').addEventListener('click', openCashFloatHistory);
     document.getElementById('cfDate').addEventListener('change', () => loadFloatDay(true));
     document.getElementById('cfSaveBtn').addEventListener('click', saveFloatEntry);
+    document.getElementById('cfSummary').addEventListener('click', (e) => {
+      const ed = e.target.closest('[data-cfedit]');
+      if (ed) {
+        const row = cfEntries[ed.dataset.cfedit];
+        if (!row) return;
+        startFloatEdit(row);
+        document.querySelectorAll('#cfSummary .cf-editing').forEach((li) => li.classList.remove('cf-editing'));
+        ed.closest('li').classList.add('cf-editing');
+        return;
+      }
+      const del = e.target.closest('[data-cfdel]');
+      if (del) deleteFloatEntryFromDay(del);
+    });
+    document.getElementById('cfCancelEditBtn').addEventListener('click', exitFloatEdit);
 
     document.getElementById('cfhCloseBtn').addEventListener('click', () => closeModal('cashFloatHistoryModal'));
     document.getElementById('cfhFilterBtn').addEventListener('click', loadFloatHistory);
     document.getElementById('cfhBody').addEventListener('click', (e) => {
+      const ed = e.target.closest('[data-fedit]');
+      if (ed) {
+        const row = cfHistRows[ed.dataset.fedit];
+        if (!row) return;
+        closeModal('cashFloatHistoryModal');
+        openCashFloat(row.float_date);
+        startFloatEdit(row);
+        return;
+      }
       const del = e.target.closest('[data-fdel]');
-      if (del) deleteFloatEntry(del.dataset.fdel);
+      if (del) { deleteFloatEntry(del.dataset.fdel, del); return; }
+      const res = e.target.closest('[data-frestore]');
+      if (res) restoreFloatEntry(res.dataset.frestore, res);
     });
     document.getElementById('caHistoryBtn').addEventListener('click', openCashAuditHistory);
 
@@ -425,6 +535,16 @@
     document.getElementById('bdHistoryBtn').addEventListener('click', openBankDepositHistory);
     document.getElementById('bdSaveBtn').addEventListener('click', saveBankDeposit);
     document.getElementById('bdAmount').addEventListener('input', renderBankSummary);
+    document.getElementById('bdDateInput').addEventListener('change', onBankDateChanged);
+    document.getElementById('bdReceiptBtn').addEventListener('click', () => document.getElementById('bdReceipt').click());
+    document.getElementById('bdReceipt').addEventListener('change', onBankReceiptChosen);
+    document.getElementById('bdReceiptPreview').addEventListener('click', (e) => {
+      if (e.target.closest('[data-bdrcpt-remove]')) clearBankReceipt();
+    });
+    document.getElementById('bdrCloseBtn').addEventListener('click', () => closeModal('bankReceiptModal'));
+    // "View" on any deposit row (the deposit screen or the History table) opens its receipt photo.
+    document.getElementById('bankDepositModal').addEventListener('click', onReceiptViewClick);
+    document.getElementById('bankDepositHistoryModal').addEventListener('click', onReceiptViewClick);
     document.getElementById('bdhCloseBtn').addEventListener('click', () => closeModal('bankDepositHistoryModal'));
     document.getElementById('bdhFilterBtn').addEventListener('click', loadBankDepositHistory);
     document.getElementById('bdhBody').addEventListener('click', (e) => {
@@ -437,6 +557,24 @@
     document.getElementById('cahBody').addEventListener('click', onHistoryBodyClick);
 
     document.getElementById('cavCloseBtn').addEventListener('click', () => closeModal('cashAuditViewModal'));
+    document.getElementById('caeCloseBtn').addEventListener('click', () => closeModal('cashAuditEditModal'));
+    document.getElementById('caeSaveBtn').addEventListener('click', saveEditedEntry);
+    const editBox = document.getElementById('cashAuditEditSheet');
+    editBox.addEventListener('input', (e) => {
+      const t = e.target;
+      const k = t.dataset ? t.dataset.k : null;
+      if (!k || !editCtx) return;
+      const d = editCtx.draft;
+      if (k === 'qty') d.qty[t.dataset.v] = t.value;
+      else if (k === 'rem') d.remarks[t.dataset.v] = t.value;
+      else if (k === 'cashier') d.cashier = t.value;
+      else if (k === 'shift') d.shift = t.value;
+      else if (k === 'onlineSales') d.onlineSales = t.value;
+      else if (k === 'onlineDebt') d.onlineDebt = t.value;
+      else if (k === 'note') d.note = t.value;
+      else if (k === 'userRemark') d.userRemark = t.value;
+      if (k === 'qty' || k === 'onlineSales' || k === 'onlineDebt') refreshOutputs(editCtx, editBox);
+    });
     document.getElementById('cavDownloadBtn').addEventListener('click', function () {
       if (!viewCtx) return;
       openDownloadMenu(this, () => printAudit(viewCtx), () => downloadAuditExcel(viewCtx));
@@ -467,6 +605,8 @@
         shift: state.draft.shift || '',
         note: state.draft.note || '',
         user_remark: state.draft.userRemark || '',
+        counted_online_sales: Math.max(0, Math.round(Number(state.draft.onlineSales) || 0)),
+        counted_online_debt: Math.max(0, Math.round(Number(state.draft.onlineDebt) || 0)),
         denominations,
       });
 
@@ -519,7 +659,8 @@
     const rows = res.data.entries;
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="12" class="muted">No cash audits saved for this range yet.</td></tr>'; return; }
 
-    const isAdmin = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.role === 'admin');
+    const me = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER : null;
+    const isAdmin = !!(me && me.role === 'admin');
     tbody.innerHTML = rows.map((r) => {
       const varAmt = Math.round(Number(r.variance) || 0);
       const varCls = varAmt === 0 ? 'tag-green' : 'tag-red';
@@ -535,7 +676,7 @@
         <td>${fmtDate(r.audit_date)}</td>
         <td>${esc(r.cashier || '—')}</td>
         <td>${esc(r.shift || '—')}</td>
-        <td class="ca-r">${num(r.counted_cash)}</td>
+        <td class="ca-r">${countedCellHTML(r)}</td>
         <td class="ca-r">${num(r.expected_cash)}</td>
         <td><span class="tag ${varCls}">${varLabel}</span></td>
         <td class="ca-r">${hasBank ? num(r.bank_deposit) : '—'}</td>
@@ -545,10 +686,23 @@
         <td class="muted">${fmtDateTimeCA(r.created_at)}</td>
         <td>
           <button type="button" class="btn btn-outline btn-sm" data-view="${r.id}">View</button>
+          ${(isAdmin || (me && Number(r.saved_by) === Number(me.id))) ? `<button type="button" class="btn btn-outline btn-sm" data-edit="${r.id}">Edit</button>` : ''}
           ${isAdmin ? `<button type="button" class="btn btn-outline btn-sm" data-del="${r.id}">Delete</button>` : ''}
         </td>
       </tr>`;
     }).join('');
+  }
+
+  /** Total Counted for a history row. Sheets saved with the online-aware formula (version 3) show the cash in hand
+   *  plus the online money counted in Part A; older sheets only ever had the cash in hand. */
+  function countedCellHTML(r) {
+    const hand = Number(r.counted_cash) || 0;
+    if (Number(r.calc_version) < 3) return num(hand);
+    const legacy = r.counted_online_sales == null;
+    const online = legacy
+      ? (Number(r.electronic_sales) || 0) + (Number(r.debt_collected_online) || 0)
+      : (Number(r.counted_online_sales) || 0) + (Number(r.counted_online_debt) || 0);
+    return `<b>${num(hand + online)}</b><div class="ca-sub-amt">Hand ${num(hand)} · Online ${num(online)}</div>`;
   }
 
   function populateSavedByFilter(savers) {
@@ -562,6 +716,8 @@
   function onHistoryBodyClick(e) {
     const viewBtn = e.target.closest('[data-view]');
     if (viewBtn) { viewHistoryEntry(viewBtn.dataset.view); return; }
+    const editBtn = e.target.closest('[data-edit]');
+    if (editBtn) { editHistoryEntry(editBtn.dataset.edit); return; }
     const delBtn = e.target.closest('[data-del]');
     if (delBtn) { deleteHistoryEntry(delBtn.dataset.del); }
   }
@@ -574,13 +730,25 @@
     if (!res.success) { toast(res.message || 'Could not load this entry.', 'error'); return; }
 
     const r = res.data;
+    viewCtx = ctxFromEntry(r);
+
+    document.getElementById('cavTitle').textContent =
+      fmtDate(r.audit_date) + ' · saved by ' + (r.saved_by_name || 'Unknown user') + ' · ' + fmtDateTimeCA(r.created_at);
+    document.getElementById('cashAuditViewSheet').innerHTML = sheetHTML(false, viewCtx);
+    openModal('cashAuditViewModal');
+  }
+
+  function ctxFromEntry(r) {
     const qty = {}, remarks = {};
     (r.denominations || []).forEach((row) => { qty[row.denom] = row.qty; remarks[row.denom] = row.remark; });
 
-    viewCtx = {
+    return {
       date: r.audit_date,
       draft: { cashier: r.cashier || '', shift: r.shift || '', opening: r.opening_cash, note: r.note || '',
-        userRemark: (Number(r.calc_version) >= 2) ? [r.user_remark, r.note].filter((x) => x && String(x).trim()).join(' | ') : (r.user_remark || ''), qty, remarks },
+        userRemark: (Number(r.calc_version) >= 2) ? [r.user_remark, r.note].filter((x) => x && String(x).trim()).join(' | ') : (r.user_remark || ''), qty, remarks,
+        onlineSales: r.counted_online_sales == null ? '' : Number(r.counted_online_sales),
+        onlineDebt: r.counted_online_debt == null ? '' : Number(r.counted_online_debt) },
+      onlineLegacy: r.counted_online_sales == null,
       cash: Number(r.cash_sales) || 0,
       electronic: Number(r.electronic_sales) || 0,
       credit: Number(r.credit_sales) || 0,
@@ -588,6 +756,7 @@
       // Sheets saved before the upgrade (version 1) are shown with the formula they were saved with.
       version: Number(r.calc_version) || 1,
       debtCash: Number(r.debt_collected) || 0,
+      debtOnline: Number(r.debt_collected_online) || 0,
       debtPayments: r.debt_payments || [],
       outstanding: Number(r.outstanding_debts) || 0,
       debtors: null,
@@ -605,11 +774,63 @@
       openingFrom: null,
       ready: true,
     };
+  }
 
-    document.getElementById('cavTitle').textContent =
+  let editCtx = null;  // the entry being corrected in the "Edit" window
+  let editId = null;
+
+  /** Opens a saved entry for correction in its own window (never touches the live sheet). */
+  async function editHistoryEntry(id) {
+    const res = await API.get('cash_audit.php', { id });
+    if (!res.success) { toast(res.message || 'Could not load this entry.', 'error'); return; }
+    const r = res.data;
+    editCtx = ctxFromEntry(r);
+    editId = r.id;
+    if (editCtx.version >= 3 && editCtx.onlineLegacy) {
+      // Saved before the typed online amounts existed: start from the system figures so they can be corrected.
+      editCtx.onlineLegacy = false;
+      editCtx.draft.onlineSales = editCtx.electronic;
+      editCtx.draft.onlineDebt = editCtx.debtOnline;
+    }
+    // Version 2+ sheets show one remark box; fold any old separate remark into it so nothing is lost or doubled.
+    if (editCtx.version >= 2) editCtx.draft.userRemark = [r.user_remark, r.note].filter((x) => x && String(x).trim()).join(' | ');
+    document.getElementById('caeTitle').textContent =
       fmtDate(r.audit_date) + ' · saved by ' + (r.saved_by_name || 'Unknown user') + ' · ' + fmtDateTimeCA(r.created_at);
-    document.getElementById('cashAuditViewSheet').innerHTML = sheetHTML(false, viewCtx);
-    openModal('cashAuditViewModal');
+    const box = document.getElementById('cashAuditEditSheet');
+    box.innerHTML = sheetHTML(true, editCtx);
+    // The date, opening cash and bank deposit are not corrected here - only what was typed on the sheet.
+    box.querySelectorAll('[data-k="date"]').forEach((el) => { el.disabled = true; });
+    box.querySelectorAll('.ca-float-link').forEach((el) => el.remove());
+    openModal('cashAuditEditModal');
+  }
+
+  async function saveEditedEntry() {
+    if (!editCtx || !editId) return;
+    const btn = document.getElementById('caeSaveBtn');
+    btn.disabled = true;
+    try {
+      const d = editCtx.draft;
+      const denominations = DENOMS.map((v) => ({
+        denom: v, qty: qtyOf(v, editCtx), remark: d.remarks[v] || '',
+      })).filter((r) => r.qty > 0 || r.remark);
+      const payload = {
+        cashier: d.cashier || '',
+        shift: d.shift || '',
+        user_remark: d.userRemark || '',
+        counted_online_sales: Math.max(0, Math.round(Number(d.onlineSales) || 0)),
+        counted_online_debt: Math.max(0, Math.round(Number(d.onlineDebt) || 0)),
+        denominations,
+      };
+      if (editCtx.version < 2) payload.note = d.note || '';
+      else payload.note = '';
+      const res = await API._request(API.apiBase + 'cash_audit.php?id=' + encodeURIComponent(editId), 'PUT', payload);
+      if (!res.success) { toast(res.message || 'Could not save the changes.', 'error'); return; }
+      toast('Cash audit updated.');
+      closeModal('cashAuditEditModal');
+      loadCashAuditHistory();
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function deleteHistoryEntry(id) {
@@ -633,18 +854,53 @@
   /* ------------------------------------------------------------------ opening cash / float */
   const FLOAT_TAG = { opening: ['tag-gold', 'Opening'], add: ['tag-green', 'Added'], reduce: ['tag-red', 'Reduced'] };
   const floatSign = (t) => (t === 'add' ? '+' : (t === 'reduce' ? '−' : ''));
+  const ICON_TRASH = '<svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg>';
+  const ICON_EDIT = '<svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg>';
+  const ICON_RESTORE = '<svg class="ui-icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg>';
+  const floatIconBtn = (attr, id, title, icon, extra) =>
+    `<button type="button" class="btn btn-outline btn-icon cf-iconbtn${extra || ''}" ${attr}="${id}" title="${title}" aria-label="${title}">${icon}</button>`;
 
   /** Opens the Opening Cash screen for a date (defaults to the sheet's date).
    *  Anyone can set the opening cash and add to / reduce the float; every
    *  action is saved as its own record under the user's own name. */
   window.openCashFloat = function (date) {
     build();
+    exitFloatEdit();
     document.getElementById('cfDate').value = date || (state && state.date) || dayToday();
     document.getElementById('cfAmount').value = '';
     document.getElementById('cfNote').value = '';
     openModal('cashFloatModal');
     loadFloatDay(true);
   };
+
+  let cfEntries = {};      // the entries on screen in the day window, by id
+  let cfEditId = null;     // the record being corrected in the form below, if any
+  let cfHistRows = {};     // the rows on screen in History, by id
+
+  /** Puts a record into the form for correcting. Only the amount and note can change; the date and type stay. */
+  function startFloatEdit(e) {
+    cfEditId = e.id;
+    document.getElementById('cfDate').value = e.float_date;
+    document.getElementById('cfType').value = e.entry_type;
+    document.getElementById('cfType').disabled = true;
+    document.getElementById('cfDate').disabled = true;
+    document.getElementById('cfAmount').value = e.amount;
+    document.getElementById('cfNote').value = e.note || '';
+    document.getElementById('cfSaveBtn').textContent = 'Update';
+    document.getElementById('cfCancelEditBtn').style.display = '';
+    document.getElementById('cfAmount').focus();
+  }
+
+  function exitFloatEdit() {
+    cfEditId = null;
+    document.getElementById('cfType').disabled = false;
+    document.getElementById('cfDate').disabled = false;
+    document.getElementById('cfAmount').value = '';
+    document.getElementById('cfNote').value = '';
+    document.getElementById('cfSaveBtn').textContent = 'Save';
+    document.getElementById('cfCancelEditBtn').style.display = 'none';
+    document.querySelectorAll('#cfSummary .cf-editing').forEach((li) => li.classList.remove('cf-editing'));
+  }
 
   async function loadFloatDay(setDefaultType) {
     const box = document.getElementById('cfSummary');
@@ -655,16 +911,21 @@
     if (date !== document.getElementById('cfDate').value) return; // date changed while loading
     if (!res.success) { box.innerHTML = `<p class="ca-status error">${esc(res.message || 'Could not load this day.')}</p>`; return; }
     renderFloatSummary(res.data);
-    if (setDefaultType) document.getElementById('cfType').value = res.data.opening_entry ? 'add' : 'opening';
+    if (setDefaultType && !cfEditId) document.getElementById('cfType').value = res.data.opening_entry ? 'add' : 'opening';
   }
 
   function renderFloatSummary(s) {
+    cfEntries = {};
+    (s.entries || []).forEach((e) => { cfEntries[e.id] = Object.assign({ float_date: s.date }, e); });
+    if (cfEditId && !cfEntries[cfEditId]) exitFloatEdit();
     const items = (s.entries || []).map((e) => {
       const tag = FLOAT_TAG[e.entry_type] || ['tag-gray', e.entry_type];
-      return `<li>
+      return `<li${e.id === cfEditId ? ' class="cf-editing"' : ''}>
         <span class="tag ${tag[0]}">${tag[1]}${e.superseded ? ' · replaced' : ''}</span>
         <b class="${e.superseded ? 'cf-strike' : ''}">${floatSign(e.entry_type)}${num(e.amount)}</b>
         <span class="muted">${esc(e.saved_by_name || '—')} · ${fmtDateTimeCA(e.created_at)}${e.note ? ' · ' + esc(e.note) : ''}</span>
+        ${e.can_edit ? floatIconBtn('data-cfedit', e.id, 'Edit', ICON_EDIT) : ''}
+        ${e.can_delete ? floatIconBtn('data-cfdel', e.id, 'Delete', ICON_TRASH, ' cf-danger') : ''}
       </li>`;
     }).join('');
 
@@ -698,6 +959,19 @@
     const btn = document.getElementById('cfSaveBtn');
     btn.disabled = true;
     try {
+      if (cfEditId) {
+        const up = await API.put('cash_float.php?id=' + encodeURIComponent(cfEditId), {
+          amount: Number(amount), note: document.getElementById('cfNote').value,
+        });
+        if (!up.success) { toast(up.message || 'Could not update this record.', 'error'); return; }
+        toast(up.message || 'Record updated.');
+        exitFloatEdit();
+        document.getElementById('cfType').value = 'add';
+        renderFloatSummary(up.data);
+        if (state && state.date === date) loadNumbers();
+        if (document.getElementById('cashFloatHistoryModal').classList.contains('open')) loadFloatHistory();
+        return;
+      }
       const res = await API.post('cash_float.php', {
         float_date: date, entry_type: type, amount: Number(amount),
         note: document.getElementById('cfNote').value,
@@ -756,108 +1030,323 @@
     const rows = res.data.entries;
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="muted">No opening cash records for this range.</td></tr>'; return; }
 
-    const isAdmin = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.role === 'admin');
+    cfHistRows = {};
+    rows.forEach((r) => { cfHistRows[r.id] = r; });
     tbody.innerHTML = rows.map((r) => {
       const tag = FLOAT_TAG[r.entry_type] || ['tag-gray', r.entry_type];
-      return `<tr>
+      const gone = !!r.deleted;
+      const trail = gone
+        ? `<div class="muted cf-trail">Deleted by ${esc(r.deleted_by_name || '—')} · ${fmtDateTimeCA(r.deleted_at)}</div>`
+        : (r.restored_at ? `<div class="muted cf-trail">Restored by ${esc(r.restored_by_name || '—')} · ${fmtDateTimeCA(r.restored_at)}</div>` : '');
+      let action = '';
+      if (gone) { if (r.can_restore) action = floatIconBtn('data-frestore', r.id, 'Restore', ICON_RESTORE); }
+      else action = (r.can_edit ? floatIconBtn('data-fedit', r.id, 'Edit', ICON_EDIT) : '')
+        + (r.can_delete ? floatIconBtn('data-fdel', r.id, 'Delete', ICON_TRASH, ' cf-danger') : '');
+      return `<tr${gone ? ' class="cf-deleted-row"' : ''}>
         <td>${fmtDate(r.float_date)}</td>
-        <td><span class="tag ${tag[0]}">${tag[1]}</span>${r.superseded ? ' <span class="tag tag-gray">Replaced</span>' : ''}</td>
-        <td class="ca-r ${r.superseded ? 'cf-strike' : ''}">${floatSign(r.entry_type)}${num(r.amount)}</td>
-        <td>${esc(r.note || '—')}</td>
+        <td><span class="tag ${tag[0]}">${tag[1]}</span>${r.superseded ? ' <span class="tag tag-gray">Replaced</span>' : ''}${gone ? ' <span class="tag tag-red">Deleted</span>' : ''}</td>
+        <td class="ca-r ${(r.superseded || gone) ? 'cf-strike' : ''}">${floatSign(r.entry_type)}${num(r.amount)}</td>
+        <td>${esc(r.note || '—')}${trail}</td>
         <td>${esc(r.saved_by_name || '—')}</td>
         <td class="muted">${fmtDateTimeCA(r.created_at)}</td>
-        <td>${isAdmin ? `<button type="button" class="btn btn-outline btn-sm" data-fdel="${r.id}">Delete</button>` : ''}</td>
+        <td>${action}</td>
       </tr>`;
     }).join('');
   }
 
-  async function deleteFloatEntry(id) {
-    if (!confirm('Remove this opening cash record? The float for that day will change. This cannot be undone.')) return;
+  /** After any delete / restore: refresh whatever is on screen that depends on the float. */
+  function refreshAfterFloatChange(date) {
+    if (document.getElementById('cashFloatHistoryModal').classList.contains('open')) loadFloatHistory();
+    if (document.getElementById('cfDate').value) loadFloatDay(false);
+    if (state && (!date || state.date === date)) loadNumbers(); // Part B uses the float as its Opening Cash
+  }
+
+  async function deleteFloatEntryFromDay(btn) {
+    const id = btn.dataset.cfdel;
+    if (!confirm('Delete this record? The float for this day will be recalculated. You can restore it later from History.')) return;
+    btn.disabled = true;
+    const date = document.getElementById('cfDate').value;
     const res = await API.del('cash_float.php', { id });
-    if (!res.success) { toast(res.message || 'Could not delete this record.', 'error'); return; }
-    toast('Record removed.');
-    loadFloatHistory();
-    if (state) loadNumbers(); // Part B may have depended on it
+    if (!res.success) { btn.disabled = false; toast(res.message || 'Could not delete this record.', 'error'); return; }
+    toast(res.message || 'Record deleted.');
+    renderFloatSummary(res.data);
+    if (state && state.date === date) loadNumbers();
+    if (document.getElementById('cashFloatHistoryModal').classList.contains('open')) loadFloatHistory();
+  }
+
+  async function deleteFloatEntry(id, btn) {
+    if (!confirm('Delete this record? The float for that day will be recalculated. You can restore it later from this History.')) return;
+    if (btn) btn.disabled = true;
+    const res = await API.del('cash_float.php', { id });
+    if (!res.success) { if (btn) btn.disabled = false; toast(res.message || 'Could not delete this record.', 'error'); return; }
+    toast(res.message || 'Record deleted.');
+    refreshAfterFloatChange(res.data && res.data.date);
+  }
+
+  async function restoreFloatEntry(id, btn) {
+    if (!confirm('Restore this record? It will count towards the float for that day again.')) return;
+    if (btn) btn.disabled = true;
+    const res = await API.post('cash_float.php', { action: 'restore', id: Number(id) });
+    if (!res.success) { if (btn) btn.disabled = false; toast(res.message || 'Could not restore this record.', 'error'); return; }
+    toast(res.message || 'Record restored.');
+    refreshAfterFloatChange(res.data && res.data.date);
   }
 
   /* ------------------------------------------------------------------ bank deposit & closing cash */
 
-  /** Opens the Bank Deposit screen for the sheet that is open. Total Cash is the cash counted in Part A;
-   *  what is left after the deposit (Remaining Cash) becomes the next day's Opening Cash. */
+  /* The Bank Deposit screen works on one DEPOSIT DATE at a time. It starts on the sheet's date, but any earlier day
+   * can be picked (a deposit that was forgotten on the day). The Cash Audit for that day - and the next day's
+   * Opening Cash - are brought up to date by the server when the deposit is saved. */
+  let bd = null;            // { date, loading, deposited, entries, known }
+  let bdToken = 0;          // ignores a slow answer for a date the person has already moved away from
+  let bdReceiptFile = null; // the (shrunk) receipt photo chosen for this deposit
+
+  /** Opens the Bank Deposit screen. Total Cash is the cash counted in Part A (for the sheet's own day) or the cash
+   *  already saved in that day's Cash Audit (for another day); what is left after the deposit is Remaining Cash,
+   *  which becomes the next day's Opening Cash. */
   function openBankDeposit() {
     if (!state) return;
     if (!state.ready) { toast('Please wait — the figures for this day are still loading.', 'error'); return; }
     document.getElementById('bdAmount').value = '';
     document.getElementById('bdRemark').value = '';
-    document.getElementById('bdDate').textContent = 'Deposit for ' + fmtDate(state.date) + ' · recorded under your name';
+    clearBankReceipt();
+    const dateEl = document.getElementById('bdDateInput');
+    dateEl.max = dayToday();
+    dateEl.value = state.date;
     openModal('bankDepositModal');
+    loadBankDay(state.date);
+  }
+
+  async function loadBankDay(date) {
+    const token = ++bdToken;
+    bd = { date, loading: true, deposited: 0, entries: [], known: 0 };
+    renderBankHeader();
+    renderBankSummary();
+    renderBankList();
+    const res = await API.get('bank_deposits.php', { date });
+    if (token !== bdToken) return; // another date was picked meanwhile
+    if (!res.success) {
+      toast(res.message || 'Could not load the deposits for this date.', 'error');
+      return;
+    }
+    bd.loading = false;
+    bd.deposited = Number(res.data.total) || 0;
+    bd.entries = res.data.entries || [];
+    bd.known = Number(res.data.known_cash) || 0;
+    renderBankHeader();
     renderBankSummary();
     renderBankList();
   }
 
+  function onBankDateChanged(e) {
+    let v = e.target.value;
+    if (!v) v = (bd && bd.date) || state.date;
+    if (v > dayToday()) { toast('The deposit date cannot be in the future.', 'error'); v = dayToday(); }
+    e.target.value = v;
+    loadBankDay(v);
+  }
+
+  /** The cash this deposit is taken out of: today's live count in Part A when the deposit is for the sheet's own day,
+   *  otherwise the cash already saved for that day. */
+  function bankCash() {
+    if (state && bd && bd.date === state.date) {
+      const live = calc().counted;
+      if (live > 0) return { counted: live, live: true };
+    }
+    return { counted: (bd && bd.known) || 0, live: false };
+  }
+
+  function renderBankHeader() {
+    if (!bd) return;
+    const late = bd.date < dayToday();
+    document.getElementById('bdDate').textContent = 'Deposit for ' + fmtDate(bd.date) + ' · recorded under your name' + (late ? ' · recorded late' : '');
+  }
+
   function renderBankSummary() {
-    if (!state) return;
-    const c = calc();
+    if (!state || !bd) return;
+    const cash = bankCash();
     const typed = Math.max(0, Number(document.getElementById('bdAmount').value) || 0);
-    const left = c.counted - c.deposit;          // cash still available to bank
+    const left = cash.counted - bd.deposited;    // cash still available to bank
     const after = left - typed;                  // Remaining Cash once this deposit is saved
+    const sameDay = bd.date === state.date;
 
     let hint = '';
-    if (c.counted <= 0) hint = 'Count the cash in Part A of the Cash Audit first — the bank deposit is taken out of the cash counted.';
-    else if (typed > left) hint = 'That is more than the cash left to bank (TZS ' + num(Math.max(left, 0)) + ').';
-    else hint = 'Tomorrow\'s Opening Cash will be TZS ' + num(after) + '.';
+    let warn = false;
+    if (bd.loading) hint = 'Loading...';
+    else if (cash.counted <= 0) {
+      warn = true;
+      hint = sameDay
+        ? 'Count the cash in Part A of the Cash Audit first — the bank deposit is taken out of the cash counted.'
+        : 'No cash count is saved for ' + fmtDate(bd.date) + ' yet. Choose that date on the Cash Audit sheet, count the cash in Part A and save it, then record the deposit.';
+    } else if (typed > left) {
+      warn = true;
+      hint = 'That is more than the cash left to bank (TZS ' + num(Math.max(left, 0)) + ').';
+    } else if (bd.date < dayToday()) {
+      hint = 'Remaining Cash for ' + fmtDate(bd.date) + ' will be TZS ' + num(after) + '. Its Cash Audit and the next day\'s Opening Cash will update automatically.';
+    } else {
+      hint = 'Tomorrow\'s Opening Cash will be TZS ' + num(after) + '.';
+    }
 
     document.getElementById('bdSummary').innerHTML = `
       <div class="cf-grid">
-        <div><span>Total Cash</span><b>${num(c.counted)}</b></div>
-        <div><span>Already deposited</span><b>${num(c.deposit)}</b></div>
+        <div><span>Total Cash</span><b>${num(cash.counted)}</b></div>
+        <div><span>Already deposited</span><b>${num(bd.deposited)}</b></div>
         <div><span>This deposit</span><b>${num(typed)}</b></div>
         <div class="cf-total"><span>Remaining Cash</span><b>${num(after)}</b></div>
       </div>
-      <p class="ca-note ${(c.counted <= 0 || typed > left) ? 'ca-warn-text' : ''}">${esc(hint)}</p>`;
+      <p class="ca-note ${warn ? 'ca-warn-text' : ''}">${esc(hint)}</p>`;
   }
 
   function renderBankList() {
     const box = document.getElementById('bdList');
-    const rows = (state && state.bankEntries) || [];
+    const rows = (bd && bd.entries) || [];
     if (!rows.length) { box.innerHTML = '<p class="muted cf-empty">No bank deposit recorded for this date yet.</p>'; return; }
     box.innerHTML = '<ul class="cf-list">' + rows.map((e) => `<li>
         <span class="tag tag-green">Deposit</span>
         <b>${num(e.amount)}</b>
         <span class="muted">${esc(e.saved_by_name || '—')} · ${fmtDateTimeCA(e.created_at)}${e.remark ? ' · ' + esc(e.remark) : ''}</span>
+        ${e.has_receipt ? `<button type="button" class="ca-float-link" data-rcpt="${e.id}">View receipt</button>` : ''}
       </li>`).join('') + '</ul>';
   }
 
+  /* ---- receipt photo ---- */
+
+  /** Phone photos are several MB; shrink to a clear, small JPEG before uploading (receipts stay perfectly readable). */
+  function shrinkReceiptPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const MAX_SIDE = 1800;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+        if (scale === 1 && file.size <= 1.5 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(file.type)) { resolve(file); return; }
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error('shrink failed'))), 'image/jpeg', 0.82);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('unreadable photo')); };
+      img.src = url;
+    });
+  }
+
+  let bdReceiptToken = null; // identifies the photo currently being prepared (so a replaced/removed one is ignored)
+  let bdReceiptTask = null;  // the photo being prepared - Save waits for it so the receipt is never left behind
+
+  async function onBankReceiptChosen(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) { clearBankReceipt(); return; }
+    if (!/^image\//.test(file.type)) { toast('Please choose a photo of the receipt.', 'error'); clearBankReceipt(); return; }
+    const mine = {};
+    bdReceiptToken = mine;
+    bdReceiptFile = null;
+    const prev = document.getElementById('bdReceiptPreview');
+    prev.innerHTML = '<p class="muted cf-empty" style="margin-top:8px;">Preparing photo...</p>';
+
+    const task = (async () => {
+      let out;
+      try {
+        out = await Promise.race([
+          shrinkReceiptPhoto(file),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+        ]);
+      } catch (err) {
+        out = file; // could not be re-drawn here; the server still checks it
+      }
+      if (bdReceiptToken !== mine) return; // removed or replaced while it was being prepared
+      if (out.size > 7.5 * 1024 * 1024) {
+        toast('That photo is too large. Please take a smaller photo.', 'error');
+        clearBankReceipt();
+        return;
+      }
+      bdReceiptFile = out;
+      const kb = Math.max(1, Math.round(out.size / 1024));
+      prev.innerHTML = `<div class="bd-rcpt-prev">
+          <img src="${URL.createObjectURL(out)}" alt="Receipt preview">
+          <div class="bd-rcpt-meta"><b>${esc(file.name)}</b><span>${kb} KB</span>
+            <button type="button" class="ca-float-link" data-bdrcpt-remove="1">Remove</button></div>
+        </div>`;
+    })();
+    bdReceiptTask = task;
+    await task;
+    if (bdReceiptTask === task) bdReceiptTask = null;
+  }
+
+  function clearBankReceipt() {
+    bdReceiptToken = null;
+    bdReceiptTask = null;
+    bdReceiptFile = null;
+    const input = document.getElementById('bdReceipt');
+    if (input) input.value = '';
+    const prev = document.getElementById('bdReceiptPreview');
+    if (prev) prev.innerHTML = '';
+  }
+
+  function onReceiptViewClick(e) {
+    const btn = e.target.closest('[data-rcpt]');
+    if (!btn) return;
+    const url = API.apiBase + 'bank_deposit_receipt.php?id=' + encodeURIComponent(btn.dataset.rcpt);
+    document.getElementById('bdrImg').src = url;
+    document.getElementById('bdrOpen').href = url;
+    openModal('bankReceiptModal');
+  }
+
   async function saveBankDeposit() {
-    if (!state || !state.ready) return;
-    const c = calc();
+    if (!state || !state.ready || !bd || bd.loading) return;
+    if (bdReceiptTask) await bdReceiptTask; // a photo still being prepared must be included
+    const cash = bankCash();
     const amount = Number(document.getElementById('bdAmount').value);
-    if (c.counted <= 0) { toast('Count the cash in Part A first.', 'error'); return; }
+    if (cash.counted <= 0) {
+      toast(bd.date === state.date ? 'Count the cash in Part A first.' : 'No cash count is saved for that date yet.', 'error');
+      return;
+    }
     if (!amount || amount <= 0) { toast('Please enter the amount deposited.', 'error'); return; }
-    if (amount > c.counted - c.deposit) { toast('That is more than the cash left to bank.', 'error'); return; }
+    if (amount > cash.counted - bd.deposited) { toast('That is more than the cash left to bank.', 'error'); return; }
 
     const btn = document.getElementById('bdSaveBtn');
     btn.disabled = true;
     try {
-      const denominations = DENOMS.map((v) => ({ denom: v, qty: qtyOf(v), remark: '' })).filter((r) => r.qty > 0);
-      const res = await API.post('bank_deposits.php', {
-        deposit_date: state.date,
-        denominations,
-        amount,
-        remark: document.getElementById('bdRemark').value,
-      });
+      const form = new FormData();
+      form.append('deposit_date', bd.date);
+      form.append('amount', String(amount));
+      form.append('remark', document.getElementById('bdRemark').value);
+      if (cash.live) {
+        // Today's own deposit is taken from the count on the sheet; another day's from that day's saved Cash Audit.
+        const denominations = DENOMS.map((v) => ({ denom: v, qty: qtyOf(v), remark: '' })).filter((r) => r.qty > 0);
+        form.append('denominations', JSON.stringify(denominations));
+      }
+      if (bdReceiptFile) form.append('receipt', bdReceiptFile, 'receipt.' + (bdReceiptFile.type === 'image/png' ? 'png' : (bdReceiptFile.type === 'image/webp' ? 'webp' : 'jpg')));
+
+      const res = await API.post('bank_deposits.php', form);
       if (!res.success) { toast(res.message || 'Could not save this bank deposit.', 'error'); return; }
 
       toast(res.message || 'Bank deposit saved.');
-      state.bankDeposit = Math.round(Number(res.data.total) || 0);
-      state.bankEntries = res.data.entries || [];
-      state.bankRemarkText = state.bankEntries.map((e) => (e.remark || '').trim()).filter(Boolean).join(' | ');
+      const savedDate = bd.date;
+      bd.deposited = Number(res.data.total) || 0;
+      bd.entries = res.data.entries || [];
+      bd.known = Number(res.data.total_cash) || bd.known;
       document.getElementById('bdAmount').value = '';
       document.getElementById('bdRemark').value = '';
-      refreshOutputs();
+      clearBankReceipt();
       renderBankSummary();
       renderBankList();
-      setStatus('Bank deposit recorded. Save the Cash Audit to keep the whole sheet in History.');
+
+      if (savedDate === state.date) {
+        state.bankDeposit = Math.round(Number(res.data.total) || 0);
+        state.bankEntries = res.data.entries || [];
+        state.bankRemarkText = state.bankEntries.map((e) => (e.remark || '').trim()).filter(Boolean).join(' | ');
+        refreshOutputs();
+        setStatus('Bank deposit recorded. Save the Cash Audit to keep the whole sheet in History.');
+      } else {
+        // An earlier day changed, so the open sheet's Opening Cash may have changed with it - read it again.
+        await loadNumbers();
+        setStatus('Bank deposit recorded for ' + fmtDate(savedDate) + '. Its Cash Audit history has been updated.');
+      }
     } finally {
       btn.disabled = false;
     }
@@ -878,7 +1367,7 @@
 
   async function loadBankDepositHistory() {
     const tbody = document.getElementById('bdhBody');
-    tbody.innerHTML = '<tr><td colspan="9" class="muted">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="muted">Loading...</td></tr>';
 
     const params = {
       start: document.getElementById('bdhStart').value,
@@ -889,7 +1378,7 @@
     if (savedBy) params.saved_by = savedBy;
 
     const res = await API.get('bank_deposits.php', params);
-    if (!res.success) { tbody.innerHTML = `<tr><td colspan="9" class="muted">${esc(res.message || 'Could not load the history.')}</td></tr>`; return; }
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="10" class="muted">${esc(res.message || 'Could not load the history.')}</td></tr>`; return; }
 
     const select = document.getElementById('bdhSavedBy');
     const current = select.value;
@@ -898,18 +1387,20 @@
     select.value = current;
 
     const rows = res.data.entries;
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" class="muted">No bank deposits for this range.</td></tr>'; return; }
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="10" class="muted">No bank deposits for this range.</td></tr>'; return; }
 
     const isAdmin = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.role === 'admin');
     tbody.innerHTML = rows.map((r) => {
-      const time = fmtTime24(String(r.created_at));
+      // "Recorded" is when it was typed in; a deposit entered on a later day than it belongs to is marked as a late entry.
+      const late = String(r.created_at).slice(0, 10) > String(r.deposit_date).slice(0, 10);
       return `<tr>
         <td>${fmtDate(r.deposit_date)}</td>
-        <td class="muted">${time}</td>
+        <td class="muted">${fmtDateTimeCA(r.created_at)}${late ? ' <span class="tag tag-gold">Late entry</span>' : ''}</td>
         <td>${esc(r.saved_by_name || '—')}</td>
         <td class="ca-r">${num(r.total_cash)}</td>
         <td class="ca-r"><b>${num(r.amount)}</b></td>
         <td class="ca-r">${num(r.remaining_cash)}</td>
+        <td>${r.has_receipt ? `<button type="button" class="btn btn-outline btn-sm" data-rcpt="${r.id}">View</button>` : '<span class="muted">—</span>'}</td>
         <td class="ca-remarks-cell">${r.remark ? `<div class="ca-rm"><span class="ca-rm-txt">${esc(r.remark)}</span></div>` : '<span class="muted">—</span>'}</td>
         <td class="ca-remarks-cell">${r.audit_remark ? `<div class="ca-rm"><span class="ca-rm-txt">${esc(r.audit_remark)}</span></div>` : '<span class="muted">—</span>'}</td>
         <td>${isAdmin ? `<button type="button" class="btn btn-outline btn-sm" data-bdel="${r.id}">Delete</button>` : ''}</td>
@@ -951,29 +1442,38 @@
         rest: ' ' + money(ctx.credit) + ' is included in Total Sales but remains unpaid, so it is deducted when calculating Expected Closing Cash.',
       });
     }
-    (ctx.debtPayments || []).forEach((p) => {
+    // Debt collections: ONE line for everything paid in hand and ONE line for everything paid online,
+    // each naming every customer, instead of a separate note per payment.
+    const v = ctx.version || 2;
+    const detail = (p) => {
       const who = p.customer_name || 'A customer';
       const paid = Number(p.amount_paid) || 0;
       const before = Number(p.previous_debt) || 0;
       const left = Number(p.remaining_debt) || 0;
-      const full = left <= 0;
-      const balance = full ? 'the outstanding balance of ' + money(before) : money(paid) + ' of the outstanding balance of ' + money(before);
-      if (p.method === 'online') {
-        const via = p.online_method || 'Online';
-        notes.push({
-          lead: via + ' debt collection:',
-          rest: ' ' + who + ' paid ' + balance + ' through ' + via + '. '
-            + (full ? 'The debt is fully cleared, but this payment does not increase cash in the drawer.'
-                    : 'Remaining balance: ' + money(left) + '. This payment does not increase cash in the drawer.'),
-        });
-      } else {
-        notes.push({
-          lead: 'Cash debt collection:',
-          rest: ' ' + who + ' paid ' + balance + ' in cash, increasing Expected Closing Cash by the same amount. '
-            + (full ? 'The debt is fully cleared.' : 'Remaining balance: ' + money(left) + '.'),
-        });
-      }
-    });
+      const balance = left <= 0 ? 'the outstanding balance of ' + money(before) : money(paid) + ' of the outstanding balance of ' + money(before);
+      const status = left <= 0 ? 'debt fully cleared' : 'remaining balance ' + money(left);
+      return { who, balance, status };
+    };
+    const pays = ctx.debtPayments || [];
+    const cashPays = pays.filter((p) => p.method !== 'online');
+    const onlinePays = pays.filter((p) => p.method === 'online');
+    if (cashPays.length) {
+      notes.push({
+        lead: 'Cash debt collection:',
+        rest: ' ' + cashPays.map((p) => { const d = detail(p); return d.who + ' paid ' + d.balance + ' in cash (' + d.status + ')'; }).join('; ')
+          + '. ' + (cashPays.length === 1 ? 'This cash increases' : 'These cash payments increase') + ' Expected Closing Cash by the same amount.',
+      });
+    }
+    if (onlinePays.length) {
+      const many = onlinePays.length > 1;
+      notes.push({
+        lead: 'Online debt collection:',
+        rest: ' ' + onlinePays.map((p) => { const d = detail(p); return d.who + ' paid ' + d.balance + ' through ' + (p.online_method || 'Online') + ' (' + d.status + ')'; }).join('; ')
+          + '. ' + (v >= 3
+            ? (many ? 'These payments are' : 'This payment is') + ' counted in Total Counted In Online Transactions (Part A) and added to Expected Closing Cash.'
+            : (many ? 'These payments do' : 'This payment does') + ' not increase cash in the drawer.'),
+      });
+    }
     // Customer change: ONE simple line naming who left change; that cash is added to Expected Closing Cash.
     const joinList = (arr) => (arr.length <= 1 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1]);
     // Only what is still unpaid at closing counts: anything already collected is left out (sheets saved earlier fall back to the full amount).
@@ -992,7 +1492,7 @@
       const who = n ? (n <= 10 ? COUNT_WORDS[n] : String(n)) + (n === 1 ? ' customer still owes ' : ' customers still owe ') : 'Customers still owe ';
       notes.push({
         lead: 'Outstanding receivables:',
-        rest: ' ' + who + money(ctx.outstanding) + '. This amount is excluded from Expected Closing Cash until collected in cash.',
+        rest: ' ' + who + money(ctx.outstanding) + '. This amount is excluded from Expected Closing Cash until collected' + ((ctx.version || 2) >= 3 ? '.' : ' in cash.'),
       });
     }
     return notes;
@@ -1105,13 +1605,46 @@
         ${rows}
         <tr><td colspan="2" class="ca-strong">Total Cash In Hand</td>
             <td class="ca-r ca-strong" data-out="counted">${num(c.counted)}</td><td></td></tr>
+        ${c.version >= 3 ? partAOnlineHTML(c, ctx, editable) : ''}
       </table>
+      ${c.version >= 3 && editable ? '<div class="ca-src">Part A is a physical check: type the cash counted and the online money actually received (check the M-Pesa / bank / Mixx messages). It is not taken from the system, so a customer who paid less online than the sale shows as a shortage.</div>' : ''}
 
       <div class="ca-section">B. Sales Reconciliation</div>
       ${c.version < 2 ? partBLegacyHTML(editable, ctx, c) : partBHTML(editable, ctx, c)}
 
       ${signatureHTML()}
     </div>`;
+  }
+
+  /** Part A, below the cash in hand: what came in online (nothing to count by hand) and the overall total counted. */
+  function partAOnlineHTML(c, ctx, editable) {
+    const d = ctx.draft;
+    const cell = (k, val) => editable
+      ? `<input class="ca-in ca-r" data-k="${k}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" value="${esc(val === '' || val == null ? '' : val)}">`
+      : (Number(val) ? num(val) : '');
+    // Saved sheets (read-only) show the typed value; old sheets without one show the system figure.
+    const sVal = ctx.onlineLegacy ? c.onlineSalesCounted : d.onlineSales;
+    const dVal = ctx.onlineLegacy ? c.onlineDebtCounted : d.onlineDebt;
+    return `
+        <tr><td>Online Sales <i>(Mixx by Yas/M-Pesa/Bank)</i> <i>— amount actually received</i></td>
+            <td class="ca-c">${cell('onlineSales', sVal)}</td>
+            <td class="ca-r" data-out="onlineSales">${num(c.onlineSalesCounted)}</td><td></td></tr>
+        <tr><td>Previous Debts Collected Through Online Transactions <i>— amount actually received</i></td>
+            <td class="ca-c">${cell('onlineDebt', dVal)}</td>
+            <td class="ca-r" data-out="onlineDebt">${num(c.onlineDebtCounted)}</td><td></td></tr>
+        <tr><td colspan="2" class="ca-strong">Total Counted In Online Transactions</td>
+            <td class="ca-r ca-strong" data-out="onlineTotal">${num(c.online)}</td><td></td></tr>
+        <tr><td colspan="2" class="ca-strong">TOTAL COUNTED <i>(Cash In Hand + Online Transactions)</i></td>
+            <td class="ca-r ca-strong" data-out="countedAll">${num(c.countedAll)}</td><td></td></tr>`;
+  }
+
+  const varianceClass = (c, live) => ((live && !c.counted) || Math.round(c.variance) === 0 ? '' : (c.variance < 0 ? ' ca-short' : ' ca-over'));
+
+  /** "Short 5,000" / "Over 2,000" / "Balanced". While the live sheet has no cash counted yet it asks for the count instead. */
+  function varianceText(c, live) {
+    if (live && !c.counted) return 'Waiting for the cash count';
+    const v = Math.round(c.variance);
+    return v === 0 ? 'Balanced' : (v > 0 ? 'Over ' + num(v) : 'Short ' + num(Math.abs(v)));
   }
 
   const remarksRowHTML = (editable, d) => `<tr><td colspan="2" class="ca-remarks-box"><span class="ca-lbl">Remarks:</span>${editable
@@ -1123,6 +1656,11 @@
 
   /** Label of the "Cash Available" line - mentions customer change paid out only when there is some. */
   function availLabelHTML(c) {
+    if (c.version >= 3) {
+      return c.changeOut
+        ? 'Cash Available (<i>Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales + Previous Debts Collected Online − Customer Change Paid Out</i>)'
+        : 'Cash Available (<i>Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales + Previous Debts Collected Online</i>)';
+    }
     return c.changeOut
       ? 'Cash Available (<i>Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales − Customer Change Paid Out</i>)'
       : 'Cash Available (<i>Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales</i>)';
@@ -1164,6 +1702,7 @@
             <td class="ca-r ca-strong" data-out="total">${num(c.total)}</td></tr>
         <tr><td>Less: Credit Sales (<i>owed by customers</i>)</td><td class="ca-r" data-out="lessCredit">${neg(ctx.credit)}</td></tr>
         <tr><td>Add: Cash Collections from Previous Credit Sales (<i>Received on This Date</i>)</td><td class="ca-r" data-out="debtCash">${num(c.debtCash)}</td></tr>
+        ${c.version >= 3 ? `<tr><td>Add: Previous Debts Collected Through Online Transactions (<i>Received on This Date</i>)</td><td class="ca-r" data-out="debtOnline">${num(c.debtOnline)}</td></tr>` : ''}
         <tr data-row="changeOut"${rowShow(c.changeOut)}><td>Less: Customer Change Paid Out (<i>Earlier Days' Change Collected by Customers on This Date</i>)</td><td class="ca-r" data-out="changeOut">${neg(c.changeOut)}</td></tr>
         <tr><td><span data-html="availLabel">${availLabelHTML(c)}</span></td>
             <td class="ca-r ca-strong" data-out="available">${num(c.available)}</td></tr>
@@ -1174,6 +1713,11 @@
             <td class="ca-r ca-strong" data-out="expected">${num(c.expected)}</td></tr>
         <tr><td>Outstanding Customer Receivables (<i>Unpaid Balances; Excluded from Expected Closing Cash</i>)</td>
             <td class="ca-r" data-out="outstanding">${num(ctx.outstanding)}</td></tr>
+        ${c.version >= 3 ? `
+        <tr><td>Total Counted (<i>Part A: Cash In Hand + Online Transactions</i>)</td>
+            <td class="ca-r" data-out="bCountedAll">${num(c.countedAll)}</td></tr>
+        <tr><td><b>Short / Over</b> (<i>Total Counted − Expected Closing Cash</i>)</td>
+            <td class="ca-r ca-strong${varianceClass(c, ctx === state)}" data-out="variance">${esc(varianceText(c, ctx === state))}</td></tr>` : ''}
       </table>
 
       <div data-html="notes">${debtNotesHTML(ctx)}</div>
@@ -1191,21 +1735,22 @@
   }
 
   /** Update only the calculated cells, so typing never loses focus. */
-  function refreshOutputs() {
-    const box = document.getElementById('cashAuditSheet');
-    const c = calc();
+  function refreshOutputs(ctx, box) {
+    ctx = ctx || state;
+    box = box || document.getElementById('cashAuditSheet');
+    const c = calc(ctx);
     const setOut = (key, text) => {
       const el = box.querySelector(`[data-out="${key}"]`);
       if (el) el.textContent = text;
     };
-    DENOMS.forEach((v) => { const q = qtyOf(v); setOut('amt-' + v, q ? num(q * v) : ''); });
+    DENOMS.forEach((v) => { const q = qtyOf(v, ctx); setOut('amt-' + v, q ? num(q * v) : ''); });
     setOut('counted', num(c.counted));
     setOut('opening', num(c.opening));
-    setOut('cash', num(state.cash));
-    setOut('electronic', num(state.electronic));
-    setOut('credit', num(state.credit));
+    setOut('cash', num(ctx.cash));
+    setOut('electronic', num(ctx.electronic));
+    setOut('credit', num(ctx.credit));
     setOut('total', num(c.total));
-    setOut('expenses', num(state.expenses));
+    setOut('expenses', num(ctx.expenses));
     setOut('expected', num(c.expected));
 
     if (c.version >= 2) {
@@ -1213,10 +1758,25 @@
         const el = box.querySelector(`[data-html="${key}"]`);
         if (el && el.innerHTML !== html) el.innerHTML = html;
       };
-      setOut('lessCredit', neg(state.credit));
+      setOut('lessCredit', neg(ctx.credit));
       setOut('debtCash', num(c.debtCash));
       setOut('available', num(c.available));
-      setOut('outstanding', num(state.outstanding));
+      if (c.version >= 3) {
+        setOut('debtOnline', num(c.debtOnline));
+        setOut('onlineSales', num(c.onlineSalesCounted));
+        setOut('onlineDebt', num(c.onlineDebtCounted));
+        setOut('onlineTotal', num(c.online));
+        setOut('countedAll', num(c.countedAll));
+        setOut('bCountedAll', num(c.countedAll));
+        setOut('variance', varianceText(c, ctx === state));
+        const vEl = box.querySelector('[data-out="variance"]');
+        if (vEl) {
+          vEl.classList.remove('ca-short', 'ca-over');
+          const cls = varianceClass(c, ctx === state).trim();
+          if (cls) vEl.classList.add(cls);
+        }
+      }
+      setOut('outstanding', num(ctx.outstanding));
       setOut('changeDay', num(c.changeDay));
       setOut('changeOut', neg(c.changeOut));
       const outRow = box.querySelector('[data-row="changeOut"]');
@@ -1224,14 +1784,14 @@
       setOut('bTotal', money(c.counted));
       setOut('bDeposit', money(c.deposit));
       setOut('bRemaining', money(c.remaining));
-      setHtml('openingSrc', openingSrcHTML(state, true));
+      setHtml('openingSrc', openingSrcHTML(ctx, ctx === state));
       setHtml('availLabel', availLabelHTML(c));
-      setHtml('notes', debtNotesHTML(state));
-      setHtml('debts', debtTableHTML(state));
-      setHtml('bankRemark', bankRemarkHTML(state));
+      setHtml('notes', debtNotesHTML(ctx));
+      setHtml('debts', debtTableHTML(ctx));
+      setHtml('bankRemark', bankRemarkHTML(ctx));
       setHtml('tomorrow', tomorrowHTML(c));
     }
-    if (document.getElementById('bankDepositModal').classList.contains('open')) renderBankSummary();
+    if (ctx === state && document.getElementById('bankDepositModal').classList.contains('open')) renderBankSummary();
   }
 
   function setStatus(text, isError) {
@@ -1286,6 +1846,7 @@
     const debt = dRes.data.debt || {};
     const deps = dRes.data.deposits || { total: 0, entries: [] };
     state.debtCash = Math.round(Number(debt.collected_cash) || 0);
+    state.debtOnline = Math.round(Number(debt.collected_online) || 0); // debts paid online: counted online in Part A and added to Expected Closing Cash
     state.debtPayments = debt.payments || [];
     state.outstanding = Math.round(Number(debt.outstanding) || 0);
     state.debtors = Number(debt.debtors) || 0;
@@ -1311,8 +1872,8 @@
   /** The figures that come from the server for a day - reset to zero while a day is loading. */
   function blankDay(st) {
     st.cash = st.electronic = st.credit = st.expenses = 0;
-    st.version = 2;
-    st.debtCash = 0; st.debtPayments = []; st.outstanding = 0; st.debtors = 0;
+    st.version = 3;
+    st.debtCash = 0; st.debtOnline = 0; st.debtPayments = []; st.outstanding = 0; st.debtors = 0;
     st.changeHeld = 0; st.changeCollected = 0; st.changeDayOutstanding = 0; st.changePaidPrior = 0; st.changeOutstanding = 0; st.changeHeldEntries = []; st.changeCollectedEntries = [];
     st.bankDeposit = 0; st.bankEntries = []; st.bankRemarkText = '';
     st.openingSource = 'none'; st.openingFrom = null;
@@ -1328,16 +1889,25 @@
     loadNumbers();
   }
 
-  /** Called by the "Cash Audit" button on the Sales page. */
+  /** Opens today's Cash Audit sheet. On cash-audit.html this runs by itself as soon as the page has loaded. */
   window.openCashAudit = function () {
     build();
     const date = dayToday();
     state = blankDay({ date, draft: drafts[date] || (drafts[date] = newDraft()), ready: false });
     state.draft.opening = 0;
     document.getElementById('cashAuditSheet').innerHTML = sheetHTML(true);
-    openModal('cashAuditModal');
+    if (document.getElementById('cashAuditModal')) openModal('cashAuditModal'); // old pop-up mode only
     loadNumbers();
   };
+
+  // The Cash Audit page: sign in check, then show today's sheet.
+  if (document.getElementById('cashAuditPageMount')) {
+    (async function startCashAuditPage() {
+      await Promise.resolve(); // let the rest of this file finish loading first
+      if (typeof requireAuth === 'function') await requireAuth();
+      window.openCashAudit();
+    })();
+  }
 
   /* ------------------------------------------------------------------ PDF (print) */
   async function printAudit(ctx) {
@@ -1541,8 +2111,25 @@
     blank(3, rTot, S.rem);
     heights[rTot] = 22;
 
+    // Online money counted in Part A (sheets saved with the online-aware formula only)
+    let rLastA = rTot;
+    let rGrand = null;
+    if (c.version >= 3) {
+      const rOn1 = rTot + 1, rOn2 = rTot + 2, rOnT = rTot + 3;
+      rGrand = rTot + 4;
+      rich(0, rOn1, [{ t: 'Online Sales ' }, { t: '(Mixx by Yas/M-Pesa/Bank)', i: true }], S.desc); merge(rOn1, 0, rOn1, 1, S.desc);
+      numc(2, rOn1, c.onlineSalesCounted, S.amt); blank(3, rOn1, S.rem); heights[rOn1] = 20;
+      rich(0, rOn2, [{ t: 'Previous Debts Collected Through Online Transactions' }], S.desc); merge(rOn2, 0, rOn2, 1, S.desc);
+      numc(2, rOn2, c.onlineDebtCounted, S.amt); blank(3, rOn2, S.rem); heights[rOn2] = 20;
+      str(0, rOnT, 'Total Counted In Online Transactions', S.totLabel); merge(rOnT, 0, rOnT, 1, S.totLabel);
+      numc(2, rOnT, c.online, S.totAmt, `C${rOn1}+C${rOn2}`); blank(3, rOnT, S.rem); heights[rOnT] = 22;
+      rich(0, rGrand, [{ t: 'TOTAL COUNTED ', b: true }, { t: '(Cash In Hand + Online Transactions)', i: true }], S.totLabel); merge(rGrand, 0, rGrand, 1, S.totLabel);
+      numc(2, rGrand, c.countedAll, S.totAmt, `C${rTot}+C${rOnT}`); blank(3, rGrand, S.rem); heights[rGrand] = 22;
+      rLastA = rGrand;
+    }
+
     // ---- B. Sales Reconciliation
-    const rB = rTot + 2; // 18
+    const rB = rLastA + 2; // 18 (22 when the online rows are there)
     str(0, rB, 'B. Sales Reconciliation', S.section);
     str(0, rB + 1, 'Description', S.headL); merge(rB + 1, 0, rB + 1, 1, S.headL);
     str(2, rB + 1, 'Amount (TZS)', S.headC);
@@ -1584,13 +2171,20 @@
         { key: 'total', label: [{ t: 'Total Sales ' }, { t: '(Cash In Hand Sales + Electronic Sales + Credit Sales)', i: true }], val: c.total, bold: true, f: (R) => `SUM(C${R.cash}:C${R.credit})` },
         { key: 'less', label: [{ t: 'Less: Credit Sales ' }, { t: '(owed by customers)', i: true }], val: -ctx.credit, f: (R) => `-C${R.credit}` },
         { key: 'debt', label: [{ t: 'Add: Cash Collections from Previous Credit Sales ' }, { t: '(Received on This Date)', i: true }], val: c.debtCash },
+        ...(c.version >= 3 ? [{ key: 'debtOn', label: [{ t: 'Add: Previous Debts Collected Through Online Transactions ' }, { t: '(Received on This Date)', i: true }], val: c.debtOnline }] : []),
         ...(c.changeOut ? [{ key: 'chgOut', label: [{ t: 'Less: Customer Change Paid Out ' }, { t: "(Earlier Days' Change Collected by Customers on This Date)", i: true }], val: -c.changeOut }] : []),
-        { key: 'avail', label: [{ t: 'Cash Available ' }, { t: c.changeOut ? '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales − Customer Change Paid Out)' : '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales)', i: true }], val: c.available, bold: true,
-          f: (R) => `C${R.opening}+C${R.total}+C${R.less}+C${R.debt}` + (R.chgOut ? `+C${R.chgOut}` : '') },
+        { key: 'avail', label: [{ t: 'Cash Available ' }, { t: c.version >= 3
+            ? (c.changeOut ? '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales + Previous Debts Collected Online − Customer Change Paid Out)' : '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales + Previous Debts Collected Online)')
+            : (c.changeOut ? '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales − Customer Change Paid Out)' : '(Opening Cash + Total Sales − Credit Sales + Cash Collected from Previous Credit Sales)'), i: true }], val: c.available, bold: true,
+          f: (R) => `C${R.opening}+C${R.total}+C${R.less}+C${R.debt}` + (R.debtOn ? `+C${R.debtOn}` : '') + (R.chgOut ? `+C${R.chgOut}` : '') },
         { key: 'chgDay', label: [{ t: 'Outstanding Customer Change ' }, { t: '(Owed to Customers; Cash Held in Drawer, Not a Customer Debt)', i: true }], val: c.changeDay },
         { key: 'exp', label: [{ t: 'Expenses' }], val: ctx.expenses },
         { key: 'expected', label: [{ t: 'Expected Closing Cash ' }, { t: '= (Cash Available + Outstanding Customer Change) − Cash Expenses', i: true }], val: c.expected, bold: true, f: (R) => `(C${R.avail}+C${R.chgDay})-C${R.exp}` },
         { key: 'out', label: [{ t: 'Outstanding Customer Receivables ' }, { t: '(Unpaid Balances; Excluded from Expected Closing Cash)', i: true }], val: ctx.outstanding || 0 },
+        ...(c.version >= 3 ? [
+          { key: 'cAll', label: [{ t: 'Total Counted ' }, { t: '(Part A: Cash In Hand + Online Transactions)', i: true }], val: c.countedAll, f: () => `C${rGrand}` },
+          { key: 'var', label: [{ t: 'Short / Over ' }, { t: '(Total Counted − Expected Closing Cash; a minus figure is a Short, a plus figure is an Over)', i: true }], val: c.variance, bold: true, f: (R) => `C${R.cAll}-C${R.expected}` },
+        ] : []),
       ];
       const R = {};
       L.forEach((ln, i) => { R[ln.key] = r0 + i; });

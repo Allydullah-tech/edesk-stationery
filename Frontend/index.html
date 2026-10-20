@@ -9,6 +9,7 @@
     <meta name="description"
         content="Digital business management for eDESK Stationery — stock, sales, expenses and reports in one place.">
 
+<script>document.documentElement.classList.add('js');</script>
 <script src="js/manifest-init.js"></script>
 
 <link rel="icon" href="assets/icon-192.png">
@@ -16,7 +17,7 @@
 
 <meta name="theme-color" content="#101B30">
 
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css?v=4">
 
 <style>
     /* =========================================
@@ -56,15 +57,6 @@
         margin-top: 4px;
     }
 
-    /* Larger hero logo */
-    .hero-logo {
-        width: clamp(180px, 25vw, 280px);
-        height: auto;
-        object-fit: contain;
-        display: block;
-        margin: 0 auto 15px;
-    }
-
     /* Mobile adjustment */
     @media (max-width: 600px) {
         .landing-nav .brand img {
@@ -84,16 +76,28 @@
         .landing-nav .brand .t2 {
             font-size: 6px;
         }
+    }
 
-        .hero-logo {
-            width: 210px;
-        }
+    /* Landing page: no report card under the hero, so tighten the gap before the features */
+    .hero {
+        padding-top: 30px;
+        padding-bottom: 34px;
+    }
+
+    .hero p {
+        margin-bottom: 14px;
+    }
+
+    .ticker + .section {
+        padding-top: 36px;
     }
 </style>
 
 </head>
 
 <body>
+
+<div class="scroll-progress" id="scrollProgress"></div>
 
 <!-- =========================
      NAVIGATION
@@ -105,7 +109,7 @@
             <img src="assets/logo.png" alt="eDESK Stationery logo">
 
             <div>
-                <div class="t1">eDESK</div>
+                <div class="t1">eDesk</div>
                 <div class="t2">Print &amp; Digital</div>
             </div>
         </div>
@@ -129,23 +133,31 @@
      HERO
      ========================= -->
 <header class="hero">
+    <div class="particles"><span style="--x:45%;--s:5px;--t:11s;--dl:-10s;"></span><span style="--x:10%;--s:4px;--t:12s;--dl:-1s;"></span><span style="--x:50%;--s:4px;--t:12s;--dl:-3s;"></span><span style="--x:8%;--s:4px;--t:11s;--dl:-6s;"></span><span style="--x:12%;--s:5px;--t:8s;--dl:-8s;"></span><span style="--x:58%;--s:4px;--t:12s;--dl:-1s;"></span><span style="--x:32%;--s:4px;--t:12s;--dl:-9s;"></span><span style="--x:54%;--s:4px;--t:9s;--dl:-0s;"></span><span style="--x:75%;--s:5px;--t:10s;--dl:-6s;"></span><span style="--x:22%;--s:4px;--t:12s;--dl:-4s;"></span><span style="--x:75%;--s:5px;--t:8s;--dl:-9s;"></span><span style="--x:77%;--s:5px;--t:10s;--dl:-1s;"></span><span style="--x:74%;--s:4px;--t:12s;--dl:-0s;"></span><span style="--x:83%;--s:5px;--t:11s;--dl:-10s;"></span><span style="--x:72%;--s:8px;--t:10s;--dl:-7s;"></span><span style="--x:78%;--s:8px;--t:10s;--dl:-4s;"></span></div>
     <div class="container">
 
-        <img src="assets/hero-logo.png"
-            class="hero-logo"
-            alt="eDESK Stationery">
+        <!-- Logo inside a rotating ring -->
+        <div class="logo-ring">
+            <span class="ring ring-track"></span>
+            <span class="ring ring-spin"></span>
+            <span class="ring ring-orbit"></span>
+            <span class="ring ring-dash"></span>
+            <img src="assets/hero-logo.png"
+                class="hero-logo"
+                alt="eDESK Stationery">
+        </div>
 
-        <p style="color:white;">Print. Create. Design.</p>
+        <p class="anim-up shimmer-text" style="--d:.5s;font-size:15px;">Print. Create. Design.</p>
 
-        <p>
+        <p class="anim-up" style="--d:.7s;">
             Stock, Sales, Expenses, Reports, and Damages;
             all tracked in one simple app.
         </p>
 
-        <div class="cta">
+        <div class="cta anim-up" style="--d:.9s;">
 
             <a href="login.html">
-                <button class="btn btn-primary">
+                <button class="btn btn-primary btn-pulse">
                     Open the App
                 </button>
             </a>
@@ -160,41 +172,9 @@
     </div>
 </header>
 
-
-<!-- =========================
-     TODAY'S REPORT
-     ========================= -->
-<div class="container">
-
-    <div class="today-card" id="today-card">
-
-        <div class="head">
-            <span class="t">Today's Report</span>
-            <span class="d" id="today-date">—</span>
-        </div>
-
-        <div class="today-row">
-            <span class="k">Total Sales</span>
-            <span class="v" id="t-sales">—</span>
-        </div>
-
-        <div class="today-row">
-            <span class="k">Products / Services Sold</span>
-            <span class="v" id="t-count">—</span>
-        </div>
-
-        <div class="today-row">
-            <span class="k">Total Expenses</span>
-            <span class="v" id="t-expenses">—</span>
-        </div>
-
-        <div class="today-row profit">
-            <span class="k">Profit Today</span>
-            <span class="v" id="t-profit">—</span>
-        </div>
-
-    </div>
-
+<!-- KEYWORD STRIP -->
+<div class="ticker" aria-hidden="true">
+    <div class="ticker-track"><span>Stock</span><span>Sales</span><span>Expenses</span><span>Reports</span><span>Damages &amp; Waste</span><span>Team Access</span><span>Printing</span><span>Digital Services</span><span>Stock</span><span>Sales</span><span>Expenses</span><span>Reports</span><span>Damages &amp; Waste</span><span>Team Access</span><span>Printing</span><span>Digital Services</span></div>
 </div>
 
 
@@ -205,7 +185,7 @@
 
     <div class="container">
 
-        <div class="section-head">
+        <div class="section-head reveal">
 
             <div class="eyebrow">
                 Why eDesk
@@ -225,7 +205,7 @@
 
         <div class="feature-grid">
 
-            <div class="feature">
+            <div class="feature reveal">
 
                 <div class="fi">
                     <svg class="ui-icon">
@@ -243,7 +223,7 @@
             </div>
 
 
-            <div class="feature">
+            <div class="feature reveal">
 
                 <div class="fi">
                     <svg class="ui-icon">
@@ -261,7 +241,7 @@
             </div>
 
 
-            <div class="feature">
+            <div class="feature reveal">
 
                 <div class="fi">
                     <svg class="ui-icon">
@@ -279,7 +259,7 @@
             </div>
 
 
-            <div class="feature">
+            <div class="feature reveal">
 
                 <div class="fi">
                     <svg class="ui-icon">
@@ -297,7 +277,7 @@
             </div>
 
 
-            <div class="feature">
+            <div class="feature reveal">
 
                 <div class="fi">
                     <svg class="ui-icon">
@@ -315,7 +295,7 @@
             </div>
 
 
-            <div class="feature">
+            <div class="feature reveal">
 
                 <div class="fi">
                     <svg class="ui-icon">
@@ -372,45 +352,69 @@
     document.getElementById('year').textContent =
         new Date().getFullYear();
 
+    // Scroll progress bar
+    (function () {
+        var bar = document.getElementById('scrollProgress');
+        if (!bar) return;
+        function update() {
+            var max = document.documentElement.scrollHeight - window.innerHeight;
+            var p = max > 0 ? Math.min(1, window.scrollY / max) : 0;
+            bar.style.transform = 'scaleX(' + p + ')';
+        }
+        window.addEventListener('scroll', update, { passive: true });
+        window.addEventListener('resize', update);
+        update();
+    })();
 
-    // Load today's report
-    (async function loadTodayReport() {
+    // Logo ring follows the pointer slightly (mouse devices only)
+    (function () {
+        var hero = document.querySelector('.hero');
+        var ring = document.querySelector('.logo-ring');
+        if (!hero || !ring || !window.matchMedia('(pointer:fine)').matches) return;
+        hero.addEventListener('mousemove', function (e) {
+            var r = hero.getBoundingClientRect();
+            ring.style.setProperty('--mx', ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
+            ring.style.setProperty('--my', ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
+        });
+        hero.addEventListener('mouseleave', function () {
+            ring.style.setProperty('--mx', 0);
+            ring.style.setProperty('--my', 0);
+        });
+    })();
 
-        const res = await API._request(
-            API.apiBase + 'public_today.php',
-            'GET'
-        );
+    // Scroll-reveal: fade/slide elements in as they enter the screen
+    (function () {
+        var items = document.querySelectorAll('.reveal');
+        if (!items.length) return;
 
-        if (!res.success) {
+        // stagger cards that appear together
+        document.querySelectorAll('.feature-grid').forEach(function (grid) {
+            grid.querySelectorAll('.reveal').forEach(function (el, i) {
+                el.style.setProperty('--rd', (i % 3) * 0.1 + 's');
+            });
+        });
 
-            document.getElementById('today-card').innerHTML =
-                '<div class="head">' +
-                '<span class="t">Today\'s Report</span>' +
-                '</div>' +
-                '<p class="muted" style="font-size:12px;margin:4px 0 0;">' +
-                'Report will appear here once the system is installed and in use.' +
-                '</p>';
+        function show(el) {
+            el.classList.add('in');
+            // after the entrance finishes, switch to the fast hover transition
+            setTimeout(function () { el.classList.add('done'); }, 1000);
+        }
 
+        if (!('IntersectionObserver' in window)) {
+            items.forEach(show);
             return;
         }
 
-        const d = res.data;
+        var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+                if (e.isIntersecting) {
+                    show(e.target);
+                    io.unobserve(e.target);
+                }
+            });
+        }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
 
-        document.getElementById('today-date').textContent =
-            d.date;
-
-        document.getElementById('t-sales').textContent =
-            money(d.total_sales);
-
-        document.getElementById('t-count').textContent =
-            d.transactions;
-
-        document.getElementById('t-expenses').textContent =
-            money(d.total_expenses);
-
-        document.getElementById('t-profit').textContent =
-            money(d.net_profit);
-
+        items.forEach(function (el) { io.observe(el); });
     })();
 
 </script>

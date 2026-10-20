@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/report_helper.php';
+require_once __DIR__ . '/../helpers/access_helper.php';
+require_once __DIR__ . '/../helpers/low_stock_helper.php';
 
 $user = require_login();
 $pdo = get_db();
@@ -28,26 +30,7 @@ $stock = $stmt->fetch();
 // as "Parent → Type" (e.g. "Pen → Obama Pen"). Wrapped defensively in
 // case Backend/upgrade_add_product_variants.php hasn't been run yet on
 // this install - the dashboard should still load either way.
-try {
-    $stmt = $pdo->query("
-        (SELECT p.id, p.name, p.stock_quantity, p.reorder_level, p.unit
-         FROM products p
-         WHERE p.is_service = 0 AND p.status = 'active' AND p.stock_quantity <= p.reorder_level
-           AND NOT EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id))
-        UNION ALL
-        (SELECT p.id, CONCAT(p.name, ' → ', pv.variant_name) AS name, pv.stock_quantity, pv.reorder_level, pv.unit
-         FROM product_variants pv
-         JOIN products p ON p.id = pv.product_id
-         WHERE p.is_service = 0 AND pv.status = 'active' AND p.status = 'active' AND pv.stock_quantity <= pv.reorder_level)
-        ORDER BY stock_quantity ASC LIMIT 15
-    ");
-    $lowStock = $stmt->fetchAll();
-} catch (Exception $e) {
-    $stmt = $pdo->query('SELECT id, name, stock_quantity, reorder_level, unit FROM products
-        WHERE is_service = 0 AND status = "active" AND stock_quantity <= reorder_level
-        ORDER BY stock_quantity ASC LIMIT 15');
-    $lowStock = $stmt->fetchAll();
-}
+$lowStock = fetch_low_stock_items($pdo, 15);
 
 // This month totals
 [$mStart, $mEnd] = resolve_period('month', $today);
@@ -72,6 +55,8 @@ try {
 // credit-system upgrade script hasn't been run yet.
 $dueTodayDebts = [];
 $overdueDebts = [];
+$dueSoonDebts = [];   // due within the next 3 days (not today, not overdue)
+$dueSoonLimit = (new DateTime($today))->modify('+3 days')->format('Y-m-d');
 try {
     $stmt = $pdo->query("SELECT s.id, s.customer_name, s.credit_deadline, s.total_amount,
             COALESCE((SELECT SUM(dp.amount) FROM debt_payments dp WHERE dp.sale_id = s.id), 0) AS paid_amount
@@ -82,16 +67,18 @@ try {
         $remaining = round((float)$c['total_amount'] - (float)$c['paid_amount'], 2);
         if ($remaining <= 0 || empty($c['credit_deadline'])) continue;
         if ($c['credit_deadline'] === $today) {
-            $dueTodayDebts[] = ['customer_name' => $c['customer_name'], 'remaining' => $remaining];
+            $dueTodayDebts[] = ['sale_id' => (int)$c['id'], 'customer_name' => $c['customer_name'], 'remaining' => $remaining];
         } elseif ($c['credit_deadline'] < $today) {
-            $overdueDebts[] = ['customer_name' => $c['customer_name'], 'remaining' => $remaining, 'deadline' => $c['credit_deadline']];
+            $overdueDebts[] = ['sale_id' => (int)$c['id'], 'customer_name' => $c['customer_name'], 'remaining' => $remaining, 'deadline' => $c['credit_deadline']];
+        } elseif ($c['credit_deadline'] <= $dueSoonLimit) {
+            $dueSoonDebts[] = ['sale_id' => (int)$c['id'], 'customer_name' => $c['customer_name'], 'remaining' => $remaining, 'deadline' => $c['credit_deadline']];
         }
     }
 } catch (Exception $e) {
     // Credit-system columns don't exist yet - no alerts, no crash.
 }
 
-respond(true, [
+$payload = [
     'shop_today' => $today,
     'today' => [
         'total_sales' => (float)$todayReport['sales']['total_sales'],
@@ -118,7 +105,22 @@ respond(true, [
     'debt_alerts' => [
         'due_today' => $dueTodayDebts,
         'overdue' => $overdueDebts,
+        'due_soon' => $dueSoonDebts,
         'due_today_total' => array_sum(array_column($dueTodayDebts, 'remaining')),
         'overdue_total' => array_sum(array_column($overdueDebts, 'remaining')),
+        'due_soon_total' => array_sum(array_column($dueSoonDebts, 'remaining')),
     ],
-]);
+];
+
+// Profit is for admins only - workers never receive it.
+if (!is_admin_user($user)) {
+    $payload['low_stock_alerts'] = hide_fields_in_rows($payload['low_stock_alerts'], ['buying_price']);
+    unset($payload['today']['gross_profit'], $payload['today']['net_profit'], $payload['month']['net_profit'], $payload['today']['total_damage_loss']); // damage loss = quantity x buying price
+    $payload['top_selling_today'] = array_map(function ($row) {
+        $row = hide_fields($row, ['profit']);
+        if (!empty($row['types'])) $row['types'] = hide_fields_in_rows($row['types'], ['profit']);
+        return $row;
+    }, $payload['top_selling_today']);
+}
+
+respond(true, $payload);

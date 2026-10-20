@@ -28,11 +28,11 @@ function resetFilter() {
   loadAuditLog();
 }
 
-const ACTION_LABELS = { create: 'Created', update: 'Edited', delete: 'Deleted', payment: 'Payment', login: 'Login' };
-const ACTION_TAG_CLASS = { create: 'tag-green', update: 'tag-gold', delete: 'tag-red', payment: 'tag-gold', login: 'tag-gray' };
+const ACTION_LABELS = { create: 'Created', update: 'Edited', delete: 'Deleted', restore: 'Restored', payment: 'Payment', login: 'Login' };
+const ACTION_TAG_CLASS = { create: 'tag-green', update: 'tag-gold', delete: 'tag-red', restore: 'tag-green', payment: 'tag-gold', login: 'tag-gray' };
 const ENTITY_LABELS = {
   sale: 'Sale', product: 'Product', service: 'Service', damage: 'Damage',
-  expense: 'Expense', purchase: 'Purchase', debt_payment: 'Debt Payment',
+  expense: 'Expense', purchase: 'Product Purchase', service_purchase: 'Service Purchase', debt_payment: 'Debt Payment',
   sale_change: 'Customer Change', user: 'User Account', login: 'Login', cash_audit: 'Cash Audit', cash_float: 'Opening Cash', bank_deposit: 'Bank Deposit',
 };
 

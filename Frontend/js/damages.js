@@ -227,7 +227,7 @@ async function loadDamages() {
       <td>${unit}</td>
       <td>${qty}</td>
       <td class="muted">${d.reason}</td>
-      <td class="red"><strong>${money(cost)}</strong></td>
+      <td class="red admin-only"><strong>${money(cost)}</strong></td>
       <td>${d.recorded_by_name}</td>
       <td class="no-print">
         <button class="icon-action-btn edit-btn" title="Edit" onclick="editDamage(${d.id})"><svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg></button>
@@ -235,6 +235,7 @@ async function loadDamages() {
       </td>
     </tr>`;
     }).join('');
+    applyRoleVisibility(); // hides the Loss Value column for workers
 }
 
 function openDamageModal() {
@@ -348,9 +349,10 @@ async function deleteDamage(id) {
 }
 
 function downloadDamagesExcel() {
+    const isAdmin = CURRENT_USER && CURRENT_USER.role === 'admin';
     const rows = DAMAGES_CACHE.map(d => [
         d.damage_date, d.display_name || d.product_name || d.item_name, d.item_type === 'other' ? '' : (d.unit || ''),
-        d.item_type === 'other' ? '' : d.quantity, d.reason, d.display_cost != null ? d.display_cost : d.loss_value, d.recorded_by_name,
+        d.item_type === 'other' ? '' : d.quantity, d.reason, ...(isAdmin ? [d.display_cost != null ? d.display_cost : d.loss_value] : []), d.recorded_by_name,
     ]);
-    exportToExcel('eDESK_Damages_' + document.getElementById('fStart').value + '_to_' + document.getElementById('fEnd').value + '.csv', ['Date', 'Item', 'Unit', 'Qty', 'Reason', 'Loss Value', 'Recorded By'], rows);
+    exportToExcel('eDESK_Damages_' + document.getElementById('fStart').value + '_to_' + document.getElementById('fEnd').value + '.csv', ['Date', 'Item', 'Unit', 'Qty', 'Reason', ...(isAdmin ? ['Loss Value'] : []), 'Recorded By'], rows);
 }

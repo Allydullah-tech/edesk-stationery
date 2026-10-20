@@ -3,7 +3,7 @@ require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/report_helper.php';
 
-$user = require_login();
+$user = require_role(['admin']); // reports contain profit - admin only
 $pdo = get_db();
 
 $period = clean($_GET['period'] ?? 'day');

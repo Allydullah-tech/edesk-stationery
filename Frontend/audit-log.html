@@ -9,6 +9,7 @@
     <link rel="icon" href="assets/icon-192.png">
     <meta name="theme-color" content="#101B30">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/usermenu.css">
 </head>
 
 <body>
@@ -24,13 +25,15 @@
                 <div class="nav-label">Operations</div>
                 <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
                 <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
-                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Product Purchases</a>
+                <a href="service-purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Service Purchases</a>
                 <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="cash-audit.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg></span> Cash Audit</a>
                 <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
                 <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a></div>
             <div class="nav-group">
                 <div class="nav-label">Insights</div>
-                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="reports.html" class="nav-link admin-only"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
                 <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
                 <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a></div>
             <div class="nav-group admin-only">
@@ -54,14 +57,20 @@
                 </div>
                 <div class="flex gap-8" style="align-items:center;">
                     <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadAuditExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
-                    <div class="user-chip">
-                        <div class="avatar js-user-avatar">--</div>
-                        <div>
-                            <div class="name js-user-name">—</div>
-                            <div class="role js-user-role">—</div>
-                        </div>
+                    <div class="user-menu" id="userMenu">
+                      <button type="button" class="user-chip user-menu-btn" id="userMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="userDropdown" title="Account menu">
+                        <span class="avatar js-user-avatar">--</span>
+                        <span class="user-meta">
+                          <span class="name js-user-name">—</span>
+                          <span class="role js-user-role">—</span>
+                        </span>
+                      </button>
+                      <div class="user-dropdown hidden" id="userDropdown" role="menu">
+                        <a href="profile.html" class="user-dd-item" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg> My Profile</a>
+                        <div class="user-dd-sep"></div>
+                        <button type="button" class="user-dd-item danger js-logout" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg> Log Out</button>
+                      </div>
                     </div>
-                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
                 </div>
             </div>
 
@@ -101,7 +110,12 @@
               <option value="service:create">Service Added</option>
               <option value="service:update">Service Edited</option>
               <option value="service:delete">Service Deleted</option>
-              <option value="purchase:create">Purchase Added</option>
+              <option value="purchase:create">Product Purchase Added</option>
+              <option value="purchase:update">Product Purchase Edited</option>
+              <option value="purchase:delete">Product Purchase Deleted</option>
+              <option value="service_purchase:create">Service Purchase Added</option>
+              <option value="service_purchase:update">Service Purchase Edited</option>
+              <option value="service_purchase:delete">Service Purchase Deleted</option>
               <option value="expense:create">Expense Added</option>
               <option value="expense:update">Expense Edited</option>
               <option value="expense:delete">Expense Deleted</option>
@@ -109,6 +123,8 @@
               <option value="damage:update">Damage Edited</option>
               <option value="damage:delete">Damage Deleted</option>
               <option value="debt_payment:payment">Debt Payment Recorded</option>
+              <option value="debt_payment:update">Debt Payment Edited</option>
+              <option value="debt_payment:delete">Debt Payment Deleted</option>
               <option value="user:create">User Account Created</option>
               <option value="user:update">User Account Edited</option>
               <option value="user:delete">User Account Deleted</option>

@@ -6,6 +6,8 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
     await requireAuth();
     document.getElementById('ex-date').value = todayStr();
     resetFilter();
+    // opened from the dashboard shortcut buttons (?new=1)
+    if (new URLSearchParams(location.search).get('new') === '1') { openExpenseModal(); history.replaceState(null, '', location.pathname); }
 })();
 
 function resetFilter() {

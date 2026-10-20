@@ -29,7 +29,7 @@ if ($method === 'GET' && !empty($_GET['history'])) {
     $sale = $stmt->fetch();
     if (!$sale) respond(false, null, 'Credit sale not found.', 404);
 
-    $pStmt = $pdo->prepare('SELECT dp.payment_date, dp.amount, dp.method, dp.online_method, dp.note, u.full_name AS recorded_by_name
+    $pStmt = $pdo->prepare('SELECT dp.id, dp.payment_date, dp.amount, dp.method, dp.online_method, dp.note, u.full_name AS recorded_by_name
                              FROM debt_payments dp JOIN users u ON u.id = dp.recorded_by
                              WHERE dp.sale_id = ? ORDER BY dp.payment_date ASC, dp.id ASC');
     $pStmt->execute([$saleId]);
@@ -132,6 +132,103 @@ if ($method === 'POST') {
 
     respond(true, ['remaining' => max($newRemaining, 0)],
         $newRemaining <= 0 ? 'Fully paid off. Debt cleared.' : 'Payment recorded. ' . number_format($newRemaining) . ' still remaining.');
+}
+
+if ($method === 'PUT') {
+    // Admin only: correct a payment that was recorded wrongly (amount, date, how it was paid, note).
+    $user = require_role(['admin']);
+    $d = body();
+    $paymentId = (int)($d['id'] ?? 0);
+    if (!$paymentId) respond(false, null, 'Payment id is required.', 422);
+
+    $amount = round((float)($d['amount'] ?? 0), 2);
+    if ($amount <= 0) respond(false, null, 'Enter a valid payment amount.', 422);
+
+    $newDate = null;
+    if (!empty($d['payment_date'])) {
+        $newDate = clean($d['payment_date']);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $newDate)) respond(false, null, 'Enter a valid payment date.', 422);
+    }
+    $newMethod = (!empty($d['method']) && $d['method'] === 'online') ? 'online' : 'cash_in_hand';
+    $newOnline = $newMethod === 'online' ? mb_substr(clean($d['online_method'] ?? ''), 0, 50) : null;
+    $newNote = mb_substr(clean($d['note'] ?? ''), 0, 255);
+
+    try {
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare('SELECT dp.*, s.customer_id, s.customer_name, s.total_amount
+                               FROM debt_payments dp JOIN sale_transactions s ON s.id = dp.sale_id
+                               WHERE dp.id = ? FOR UPDATE');
+        $stmt->execute([$paymentId]);
+        $existing = $stmt->fetch();
+        if (!$existing) { $pdo->rollBack(); respond(false, null, 'Payment not found.', 404); }
+
+        // The corrected amount, together with the OTHER payments, may not exceed what was owed.
+        $othersStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM debt_payments WHERE sale_id = ? AND id <> ?');
+        $othersStmt->execute([$existing['sale_id'], $paymentId]);
+        $maxAllowed = round((float)$existing['total_amount'] - (float)$othersStmt->fetchColumn(), 2);
+        if ($amount > $maxAllowed + 0.01) {
+            $pdo->rollBack();
+            respond(false, null, 'That amount is too high. The most this payment can be is ' . number_format(max($maxAllowed, 0)) . ' (the debt\'s total less its other payments).', 422);
+        }
+
+        $newDate = $newDate ?? $existing['payment_date'];
+        $pdo->prepare('UPDATE debt_payments SET amount = ?, method = ?, online_method = ?, payment_date = ?, note = ? WHERE id = ?')
+            ->execute([$amount, $newMethod, $newOnline, $newDate, $newNote, $paymentId]);
+
+        $pdo->commit();
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        respond(false, null, 'Could not update the payment. Please try again.', 500);
+    }
+
+    // The debt's balance changed, so re-check the customer's overdue count.
+    if ($existing['customer_id']) refresh_customer_restriction($pdo, (int)$existing['customer_id']);
+
+    $newRemaining = max(round($maxAllowed - $amount, 2), 0);
+
+    $changes = [];
+    if ((float)$existing['amount'] != $amount) $changes[] = 'amount ' . audit_money_diff($existing['amount'], $amount);
+    if ($existing['payment_date'] !== $newDate) $changes[] = 'date ' . $existing['payment_date'] . ' to ' . $newDate;
+    if ($existing['method'] !== $newMethod) $changes[] = 'paid via ' . $existing['method'] . ' to ' . $newMethod;
+    if ((string)($existing['online_method'] ?? '') !== (string)($newOnline ?? '')) $changes[] = 'online method changed';
+    if ((string)($existing['note'] ?? '') !== $newNote) $changes[] = 'note changed';
+    log_activity($pdo, $user, 'update', 'debt_payment', $existing['sale_id'],
+        'Edited a payment on ' . ($existing['customer_name'] ?: 'a customer') . "'s debt (sale #" . $existing['sale_id'] . ')'
+        . ($changes ? ': ' . implode(', ', $changes) : ' (no changes)')
+        . '; TZS ' . number_format($newRemaining) . ' now remaining');
+
+    respond(true, ['remaining' => $newRemaining], 'Payment updated. ' . number_format($newRemaining) . ' now remaining on this debt.');
+}
+
+if ($method === 'DELETE') {
+    // Admin only: remove a payment that should never have been recorded. The amount goes back onto the debt.
+    $user = require_role(['admin']);
+    $paymentId = (int)($_GET['payment_id'] ?? 0);
+    if (!$paymentId) respond(false, null, 'Payment id is required.', 422);
+
+    $stmt = $pdo->prepare('SELECT dp.*, s.customer_id, s.customer_name, s.total_amount
+                           FROM debt_payments dp JOIN sale_transactions s ON s.id = dp.sale_id
+                           WHERE dp.id = ?');
+    $stmt->execute([$paymentId]);
+    $existing = $stmt->fetch();
+    if (!$existing) respond(false, null, 'Payment not found.', 404);
+
+    $pdo->prepare('DELETE FROM debt_payments WHERE id = ?')->execute([$paymentId]);
+
+    // Putting the amount back can make this debt overdue again, which counts toward restriction.
+    if ($existing['customer_id']) refresh_customer_restriction($pdo, (int)$existing['customer_id']);
+
+    $paidStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM debt_payments WHERE sale_id = ?');
+    $paidStmt->execute([$existing['sale_id']]);
+    $newRemaining = max(round((float)$existing['total_amount'] - (float)$paidStmt->fetchColumn(), 2), 0);
+
+    log_activity($pdo, $user, 'delete', 'debt_payment', $existing['sale_id'],
+        'Deleted a payment of TZS ' . number_format((float)$existing['amount']) . ' (' . ($existing['method'] === 'online' ? 'online' : 'cash') . ') dated ' . $existing['payment_date']
+        . ' from ' . ($existing['customer_name'] ?: 'a customer') . "'s debt (sale #" . $existing['sale_id'] . '); TZS '
+        . number_format($newRemaining) . ' now remaining');
+
+    respond(true, ['remaining' => $newRemaining], 'Payment deleted. ' . number_format($newRemaining) . ' now remaining on this debt.');
 }
 
 respond(false, null, 'Unsupported method.', 405);

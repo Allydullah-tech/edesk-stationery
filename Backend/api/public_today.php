@@ -14,5 +14,4 @@ respond(true, [
     'total_sales' => (float)$report['sales']['total_sales'],
     'transactions' => (int)$report['sales']['transactions'],
     'total_expenses' => (float)$report['expenses']['total_expenses'],
-    'net_profit' => (float)$report['net_profit'],
 ]);

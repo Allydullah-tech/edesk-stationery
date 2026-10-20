@@ -1,0 +1,148 @@
+/* =====================================================================
+   DASHBOARD ANIMATIONS  (loaded after style.css; cosmetic only)
+   Adds to the page-wide entrances/hover effects already in style.css:
+   loading shimmer, accent bars, idle icon motion, live dot, and
+   side-in cards. Numbers counting up is done in js/dashboard-anim.js.
+   ===================================================================== */
+@keyframes skelShimmer{to{background-position:-200% 0;}}
+@keyframes barGrow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+@keyframes iconBob{0%,100%{translate:0 0;}50%{translate:0 -3px;}}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(31,163,107,.55);}70%{box-shadow:0 0 0 7px rgba(31,163,107,0);}100%{box-shadow:0 0 0 0 rgba(31,163,107,0);}}
+@keyframes slideFromLeft{from{opacity:0;transform:translateX(-26px);}to{opacity:1;transform:none;}}
+@keyframes slideFromRight{from{opacity:0;transform:translateX(26px);}to{opacity:1;transform:none;}}
+@keyframes rowIn{from{opacity:0;transform:translateX(-10px);}to{opacity:1;transform:none;}}
+@keyframes softPulse{0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.35);}50%{box-shadow:0 0 0 5px rgba(229,72,77,0);}}
+@keyframes valuePop{0%{transform:scale(1);}40%{transform:scale(1.07);}100%{transform:scale(1);}}
+
+/* ---------- "Live" dot beside today's date ---------- */
+#today-label::before{
+  content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);
+  margin-right:7px;vertical-align:1px;animation:livePulse 2s ease-out infinite;
+}
+
+/* ---------- Loading placeholder while figures are fetched ---------- */
+.stat-card .value.skeleton{
+  display:inline-block;min-width:88px;height:24px;border-radius:6px;vertical-align:top;
+  color:transparent !important;
+  background:linear-gradient(90deg,#EEF0F6 25%,#F8F9FC 45%,#EEF0F6 65%);
+  background-size:200% 100%;animation:skelShimmer 1.2s linear infinite;
+}
+/* little pop when a figure finishes counting up */
+.stat-card .value.counted{animation:valuePop .35s ease;transform-origin:left center;}
+
+/* ---------- Stat cards: accent bar grows along the top edge ---------- */
+.stat-card{position:relative;overflow:hidden;}
+.stat-card::after{
+  content:'';position:absolute;left:0;top:0;width:100%;height:3px;background:var(--gold);
+  transform:scaleX(0);transform-origin:left;animation:barGrow .9s cubic-bezier(.2,.7,.2,1) .6s forwards;
+}
+.stat-card:has(.value.green)::after{background:var(--green);}
+.stat-card:has(.value.red)::after{background:var(--red);}
+.stat-card:has(.value:not(.gold):not(.green):not(.red))::after{background:var(--navy);}
+.stat-card:hover::after{animation:none;transform:scaleX(1);}
+
+/* icons drift gently (uses `translate`, so the hover tilt still works) */
+.stat-card .icon{animation:iconBob 3.6s ease-in-out infinite;}
+.stat-grid > *:nth-child(2) .icon{animation-delay:.4s;}
+.stat-grid > *:nth-child(3) .icon{animation-delay:.8s;}
+.stat-grid > *:nth-child(4) .icon{animation-delay:1.2s;}
+.stat-grid > *:nth-child(5) .icon{animation-delay:1.6s;}
+.stat-grid > *:nth-child(6) .icon{animation-delay:2s;}
+
+/* ---------- Section titles: gold underline draws in ---------- */
+.main-content .card-title::after{
+  content:'';display:block;width:30px;height:2px;border-radius:2px;background:var(--gold);margin-top:5px;
+  transform-origin:left;animation:barGrow .7s cubic-bezier(.2,.7,.2,1) .5s backwards;
+}
+
+/* ---------- Lower cards slide in from either side ---------- */
+.dashboard-grid > .card:nth-child(1){animation:slideFromLeft .6s cubic-bezier(.2,.7,.2,1) .35s backwards;}
+.dashboard-grid > .card:nth-child(2){animation:slideFromRight .6s cubic-bezier(.2,.7,.2,1) .45s backwards;}
+.dashboard-grid > .card{transition:box-shadow .25s ease,transform .25s ease;}
+.dashboard-grid > .card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);}
+
+/* ---------- Low-stock list: rows slide in, red tags softly pulse ---------- */
+#lowStockList > div{animation:rowIn .4s ease backwards;transition:background .15s ease,padding-left .15s ease;}
+#lowStockList > div:nth-child(1){animation-delay:.55s;} #lowStockList > div:nth-child(2){animation-delay:.62s;}
+#lowStockList > div:nth-child(3){animation-delay:.69s;} #lowStockList > div:nth-child(4){animation-delay:.76s;}
+#lowStockList > div:nth-child(5){animation-delay:.83s;} #lowStockList > div:nth-child(n+6){animation-delay:.9s;}
+#lowStockList > div:hover{background:#FFF9F8;padding-left:6px;}
+#lowStockList .tag-red{animation:softPulse 2.4s ease-in-out infinite;}
+
+/* ---------- Top-selling rows: gold hover wash ---------- */
+#topSellingBody tr:hover{background:#FFFBF2;}
+
+/* ---------- Reduced motion / print ---------- */
+@media (prefers-reduced-motion: reduce){
+  .stat-card::after{animation:none;transform:scaleX(1);}
+  .stat-card .icon,#lowStockList .tag-red,#today-label::before,.stat-card .value.skeleton,.stat-card .value.counted{animation:none !important;}
+}
+@media print{
+  .stat-card::after,.main-content .card-title::after{display:none !important;}
+  .dashboard-grid > .card,#lowStockList > div{animation:none !important;}
+}
+
+/* =====================================================================
+   WELCOME BANNER (top of dashboard)
+   ===================================================================== */
+@keyframes heroFall{0%{transform:translateY(-14px) rotate(0deg);opacity:0;}10%{opacity:.85;}90%{opacity:.7;}100%{transform:translateY(190px) rotate(240deg);opacity:0;}}
+@keyframes heroIn{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:none;}}
+
+.dash-hero{
+  position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;
+  padding:26px 30px;margin-bottom:6px;border-radius:16px;color:#fff;
+  background:
+    radial-gradient(520px 220px at 0% 0%,rgba(240,184,73,.30),transparent 70%),
+    radial-gradient(420px 260px at 100% 100%,rgba(240,184,73,.14),transparent 70%),
+    linear-gradient(120deg,var(--navy-2) 0%,var(--navy) 55%,#0B1427 100%);
+  border:1px solid rgba(240,184,73,.35);box-shadow:var(--shadow-lg);
+  animation:heroIn .5s cubic-bezier(.2,.7,.2,1) backwards;
+}
+.hero-particles{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+.hero-particles i{
+  position:absolute;top:0;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#FFE9A8,var(--gold) 60%,var(--gold-dim));
+  opacity:0;animation:heroFall linear infinite;
+}
+.hero-main,.hero-date{position:relative;z-index:1;}
+.hero-eyebrow{
+  display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;letter-spacing:.22em;
+  text-transform:uppercase;color:rgba(255,255,255,.78);
+}
+.hero-eyebrow::before{content:'';width:34px;height:1px;background:var(--gold);flex:none;}
+.hero-name{margin:6px 0 4px;font-size:clamp(22px,3vw,28px);font-weight:800;line-height:1.1;color:var(--gold);}
+.hero-sub{margin:0 0 16px;font-size:13px;color:rgba(255,255,255,.85);}
+.hero-actions{display:flex;flex-wrap:wrap;gap:10px;}
+.hero-btn{
+  display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;
+  font-size:13px;font-weight:700;color:#fff;text-decoration:none;
+  background:rgba(255,255,255,.07);border:1px solid rgba(240,184,73,.35);
+  transition:transform .15s ease,background .15s ease,box-shadow .15s ease;
+}
+.hero-btn:hover{background:rgba(255,255,255,.14);transform:translateY(-2px);}
+.hero-btn .ui-icon{width:15px;height:15px;}
+.hero-btn-primary{color:var(--navy);border-color:transparent;background:linear-gradient(180deg,#FFCB5C,var(--gold));box-shadow:0 6px 16px rgba(240,184,73,.35);}
+.hero-btn-primary:hover{background:linear-gradient(180deg,#FFD577,#F5BF50);box-shadow:0 10px 22px rgba(240,184,73,.45);}
+
+.hero-date{
+  flex:none;min-width:124px;text-align:center;padding:12px 18px;border-radius:14px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(240,184,73,.35);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+}
+.hd-weekday{font-size:10px;font-weight:700;letter-spacing:.22em;color:rgba(255,255,255,.8);}
+.hd-day{font-size:40px;font-weight:800;line-height:1.05;color:var(--gold);}
+.hd-month{font-size:10px;font-weight:700;letter-spacing:.14em;color:rgba(255,255,255,.9);}
+.hd-time{margin-top:8px;padding-top:8px;border-top:1px solid rgba(240,184,73,.3);font-size:16px;font-weight:800;color:#FFE9A8;font-variant-numeric:tabular-nums;}
+.hd-time small{margin-left:4px;font-size:10px;font-weight:700;opacity:.8;}
+
+@media (max-width:720px){
+  .dash-hero{flex-direction:column;align-items:stretch;padding:20px;}
+  .hero-date{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:10px 14px;}
+  .hd-day{font-size:28px;}
+  .hd-time{margin:0;padding:0;border:0;}
+  .hero-btn{flex:1 1 auto;justify-content:center;}
+}
+@media (prefers-reduced-motion: reduce){
+  .dash-hero{animation:none;}
+  .hero-particles i{animation:none !important;display:none;}
+}

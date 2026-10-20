@@ -115,7 +115,7 @@ async function loadProducts() {
       <td><strong>${p.name}</strong></td>
       <td>${p.category_name || '—'}</td>
       <td class="no-print">${descriptionCell}</td>
-      <td>${buyingCell}</td>
+      <td class="admin-only">${buyingCell}</td>
       <td>${minCell}</td>
       <td>${sellingCell}</td>
       <td>${unitCell}</td>
@@ -263,11 +263,12 @@ async function deleteProduct(id) {
 
 function downloadProductsExcel() {
     const isService = PAGE_PRODUCT_TYPE === 1;
+    const isAdmin = CURRENT_USER && CURRENT_USER.role === 'admin';
     const rows = PRODUCTS_CACHE.map(p => {
         const hasVariants = Number(p.variant_count) > 0;
         return [
             p.name, p.category_name || '',
-            isService ? '' : (hasVariants ? `${p.min_buying}–${p.max_buying}` : p.buying_price),
+            ...(isAdmin && !isService ? [hasVariants ? `${p.min_buying}–${p.max_buying}` : p.buying_price] : []),
             hasVariants ? '' : (p.minimum_price || ''),
             hasVariants ? `${p.min_selling}–${p.max_selling}` : p.selling_price,
             isService ? '' : (hasVariants ? (p.variant_unit || '') : p.unit),
@@ -281,7 +282,7 @@ function downloadProductsExcel() {
                 (!isService && Number(p.stock_quantity) <= Number(p.reorder_level) ? 'Low' : 'Active')),
         ];
     });
-    exportToExcel('eDESK_' + (isService ? 'Services' : 'Products') + '_' + new Date().toISOString().slice(0, 10) + '.csv', ['Name', 'Category', 'Buying Price', 'Minimum Selling Price', 'Selling Price', 'Unit', 'Stock', 'Status'], rows);
+    exportToExcel('eDESK_' + (isService ? 'Services' : 'Products') + '_' + new Date().toISOString().slice(0, 10) + '.csv', ['Name', 'Category', ...(isAdmin && !isService ? ['Buying Price'] : []), 'Minimum Selling Price', 'Selling Price', 'Unit', 'Stock', 'Status'], rows);
 }
 
 /**
@@ -502,7 +503,7 @@ function renderTypesList() {
         // Services don't carry a buying/cost price, stock quantity, or
         // reorder level - those columns are products-only, so they're
         // simply left out of the row for services.
-        const buyingCell = isService ? '' : `<td>${money(v.buying_price)}</td>`;
+        const buyingCell = isService ? '' : `<td class="admin-only">${money(v.buying_price)}</td>`;
         const stockCells = isService ? '' : `<td>${v.stock_quantity}</td><td>${v.reorder_level}</td>`;
         return `<tr>
       <td><strong>${v.variant_name}</strong></td>

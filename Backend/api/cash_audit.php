@@ -17,7 +17,11 @@
  *
  * Credit/debt: Total Sales still includes credit sales, but Expected Cash only
  * counts money actually received - credit sales are taken back out, and debts
- * that customers paid in cash on that day are added (see helpers/cash_audit_helper.php).
+ * that customers paid (in cash OR online) on that day are added (see helpers/cash_audit_helper.php).
+ *
+ * Online money (calc_version 3): Part A is a physical check - the person types the cash in hand AND the online
+ * money actually received (online sales + debts paid online). Variance = (Counted In Hand + Counted Online) -
+ * Expected Closing Cash (Part B, automatic), so an online customer who paid less than the sale shows as a shortage.
  * Bank deposits are recorded through api/bank_deposits.php and are picked up here.
  *
  * Customer change (money the shop owes a customer who left their change behind - NOT a customer debt):
@@ -26,6 +30,12 @@
  * day (cash in the drawer that is not a sale). Change paid out that day for an earlier day's change is taken
  * off Cash Available, because the earlier change is already inside the opening cash. Both figures come from
  * helpers/change_helper.php, so no amount is ever counted twice.
+ *
+ * Editing (PUT ?id=N): fixes a mistake in an already-saved entry - the cash count, the online money typed in,
+ * cashier, shift and remarks. Admins can edit any entry; a worker can edit only the entries they saved. The
+ * system figures (sales, expenses, expected cash, bank deposit) stay exactly as they were saved; only the
+ * figures that depend on what the person typed are recomputed. Every edit is written to the Activity Log with
+ * the old and new values.
  *
  * GET ?summary=YYYY-MM-DD  -> that day's debt repayments, outstanding debts, customer change and bank deposits
  */
@@ -92,10 +102,11 @@ if ($method === 'GET') {
     $limit = !empty($_GET['limit']) ? min((int)$_GET['limit'], 1000) : 200;
 
     $changeCols = change_audit_columns_ready($pdo) ? 'change_held, change_collected, outstanding_change,' : '';
+    $changeCols .= ca_online_counted_ready($pdo) ? ' counted_online_sales, counted_online_debt,' : '';
     try {
         $stmt = $pdo->prepare("SELECT id, audit_date, cashier, shift, opening_cash, cash_sales, electronic_sales,
                                        credit_sales, total_sales, expenses, counted_cash, expected_cash, variance,
-                                       calc_version, debt_collected, outstanding_debts,
+                                       calc_version, debt_collected, debt_collected_online, outstanding_debts,
                                        {$changeCols}
                                        total_cash, bank_deposit, remaining_cash, note, user_remark, bank_deposit_remark,
                                        saved_by, saved_by_name, saved_by_role, created_at
@@ -161,12 +172,14 @@ if ($method === 'POST') {
         respond(false, null, 'Could not work out the debt payments for this date. Please make sure Backend/upgrade_v4_sales_customers.php has been run. (Detail: ' . $e->getMessage() . ')', 500);
     }
     $debtCash = $debt['collected_cash'];
+    $debtOnline = $debt['collected_online'];
 
     // Customer change. Zeros until upgrade_v7_customer_change.php has been run, so nothing changes for anyone else.
     //   Cash Available = Opening + (Total Sales - Credit) + Debts collected in cash - change paid out for earlier days
     //   Expected       = (Cash Available + Outstanding Customer Change) - Expenses
     $change = get_change_day_summary($pdo, $auditDate);
-    $cashAvailable = ($opening + $total) - $credit + $debtCash - $change['paid_prior'];
+    //   (calc_version 3) Cash Available also includes debts paid online - that money is counted online in Part A.
+    $cashAvailable = ($opening + $total) - $credit + $debtCash + $debtOnline - $change['paid_prior'];
     $expected = ($cashAvailable + $change['day_outstanding']) - $expenses;
 
     $denoms = [];
@@ -181,7 +194,13 @@ if ($method === 'POST') {
             if ($qty > 0 || $remark !== '') $denoms[] = ['denom' => $denom, 'qty' => $qty, 'remark' => $remark];
         }
     }
-    $variance = $counted - $expected;
+    // Part A is a PHYSICAL check: the online sales and online debt payments are typed in by the person
+    // (what was really received), not taken from the system. Expected Closing Cash (Part B) stays automatic,
+    // so a customer who paid less online than the sale shows up as a shortage.
+    $onlineSalesCounted = max(0.0, round((float)($d['counted_online_sales'] ?? 0)));
+    $onlineDebtCounted  = max(0.0, round((float)($d['counted_online_debt'] ?? 0)));
+    $onlineCounted = $onlineSalesCounted + $onlineDebtCounted;
+    $variance = ($counted + $onlineCounted) - $expected;
 
     // Bank deposits already recorded for this date (through the Bank Deposit button).
     $deposits = get_deposit_day_summary_safe($pdo, $auditDate);
@@ -199,7 +218,7 @@ if ($method === 'POST') {
              calc_version, debt_collected, debt_collected_online, outstanding_debts, debt_payments,
              user_remark, total_cash, bank_deposit, remaining_cash, bank_deposit_remark,
              saved_by, saved_by_name, saved_by_role, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,2,?,?,?,?,?,?,?,?,?,?,?,?,NOW())');
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,3,?,?,?,?,?,?,?,?,?,?,?,?,NOW())');
         $stmt->execute([
             $auditDate,
             clean($d['cashier'] ?? ''),
@@ -234,16 +253,99 @@ if ($method === 'POST') {
             ]);
     }
 
+    // Keep the typed online amounts with this sheet.
+    if (ca_online_counted_ready($pdo)) {
+        $pdo->prepare('UPDATE cash_audits SET counted_online_sales = ?, counted_online_debt = ? WHERE id = ?')
+            ->execute([$onlineSalesCounted, $onlineDebtCounted, $newId]);
+    }
+
     // Link this day's bank deposits to the audit just saved.
     if ($deposits['entries']) sync_day_deposits($pdo, $auditDate);
 
     log_activity($pdo, $user, 'create', 'cash_audit', $newId,
         'Saved cash audit for ' . $auditDate . ' - counted TZS ' . number_format($counted)
+        . ', online TZS ' . number_format($onlineCounted)
         . ', expected TZS ' . number_format($expected)
         . ($change['held'] > 0 || $change['collected'] > 0 ? ', customer change left TZS ' . number_format($change['held']) . ', paid back TZS ' . number_format($change['collected']) : '')
         . ($bankDeposit > 0 ? ', banked TZS ' . number_format($bankDeposit) . ', remaining TZS ' . number_format($remainingCash) : ''));
 
     respond(true, ['id' => $newId], 'Cash audit saved to history.');
+}
+
+if ($method === 'PUT') {
+    $id = (int)($_GET['id'] ?? 0);
+    if (!$id) respond(false, null, 'Cash audit id is required.', 422);
+    $d = body();
+
+    $stmt = $pdo->prepare('SELECT * FROM cash_audits WHERE id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row) respond(false, null, 'Cash audit entry not found.', 404);
+
+    // Admins can fix any entry; a worker can only fix an entry they saved themselves.
+    if ($user['role'] !== 'admin' && (int)$row['saved_by'] !== (int)$user['id']) {
+        respond(false, null, 'You can only edit cash audits that you saved yourself.', 403);
+    }
+
+    $version = (int)$row['calc_version'];
+    $expected = (float)$row['expected_cash'];
+
+    // Cash count (same rules as when saving).
+    $denoms = [];
+    $counted = 0;
+    if (!empty($d['denominations']) && is_array($d['denominations'])) {
+        foreach ($d['denominations'] as $r) {
+            $denom = (int)($r['denom'] ?? 0);
+            $qty = max(0, (int)($r['qty'] ?? 0));
+            $remark = clean($r['remark'] ?? '');
+            if ($denom <= 0) continue;
+            $counted += $denom * $qty;
+            if ($qty > 0 || $remark !== '') $denoms[] = ['denom' => $denom, 'qty' => $qty, 'remark' => $remark];
+        }
+    }
+
+    // Online money typed in Part A exists only on version 3 sheets.
+    $onlineSalesCounted = null; $onlineDebtCounted = null; $onlineCounted = 0.0;
+    $canSaveOnline = $version >= 3 && ca_online_counted_ready($pdo);
+    if ($version >= 3) {
+        $onlineSalesCounted = max(0.0, round((float)($d['counted_online_sales'] ?? 0)));
+        $onlineDebtCounted  = max(0.0, round((float)($d['counted_online_debt'] ?? 0)));
+        $onlineCounted = $onlineSalesCounted + $onlineDebtCounted;
+    }
+    $variance = ($counted + $onlineCounted) - $expected;
+
+    $sets = ['cashier = ?', 'shift = ?', 'counted_cash = ?', 'variance = ?', 'denominations = ?', 'user_remark = ?'];
+    $vals = [
+        clean($d['cashier'] ?? ''),
+        clean($d['shift'] ?? ''),
+        $counted, $variance, json_encode($denoms),
+        mb_substr(clean($d['user_remark'] ?? ''), 0, 1000),
+    ];
+    if (array_key_exists('note', $d)) { $sets[] = 'note = ?'; $vals[] = clean($d['note']); }
+    if ($version >= 2) {
+        // Total Cash is the cash counted; Remaining Cash is that minus what was banked.
+        $sets[] = 'total_cash = ?';     $vals[] = $counted;
+        $sets[] = 'remaining_cash = ?'; $vals[] = $counted - (float)$row['bank_deposit'];
+    }
+    if ($canSaveOnline) {
+        $sets[] = 'counted_online_sales = ?'; $vals[] = $onlineSalesCounted;
+        $sets[] = 'counted_online_debt = ?';  $vals[] = $onlineDebtCounted;
+    }
+    $vals[] = $id;
+    $pdo->prepare('UPDATE cash_audits SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($vals);
+
+    $oldOnline = ($row['counted_online_sales'] ?? null) === null
+        ? (float)$row['electronic_sales'] + (float)$row['debt_collected_online']
+        : (float)$row['counted_online_sales'] + (float)($row['counted_online_debt'] ?? 0);
+    $oldCounted = (float)$row['counted_cash'];
+    $oldVar = (float)$row['variance'];
+    log_activity($pdo, $user, 'update', 'cash_audit', $id,
+        'Edited cash audit for ' . $row['audit_date'] . ' (originally saved by ' . ($row['saved_by_name'] ?: 'unknown') . ')'
+        . ' - cash counted TZS ' . number_format($oldCounted) . ' -> ' . number_format($counted)
+        . ($version >= 3 ? ', online TZS ' . number_format($oldOnline) . ' -> ' . number_format($onlineCounted) : '')
+        . ', difference ' . number_format($oldVar) . ' -> ' . number_format($variance));
+
+    respond(true, ['id' => $id, 'variance' => $variance], 'Cash audit updated.');
 }
 
 if ($method === 'DELETE') {

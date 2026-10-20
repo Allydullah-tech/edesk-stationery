@@ -152,6 +152,16 @@ function build_report(PDO $pdo, string $start, string $end): array
     $stmt->execute([$start, $end]);
     $expenseBreakdown = $stmt->fetchAll();
 
+    // ---- Expense detail list (every expense in the period) ----
+    // Used by the report's Excel download: Title, Category, Amount, Date, Note.
+    $stmt = $pdo->prepare('
+        SELECT id, title, category, amount, expense_date, note
+        FROM expenses WHERE expense_date BETWEEN ? AND ?
+        ORDER BY expense_date DESC, id DESC
+    ');
+    $stmt->execute([$start, $end]);
+    $expenseList = $stmt->fetchAll();
+
     // ---- Damage detail list ----
     // product_name folds in the type name (e.g. "Pen — Obama Pen") when
     // the damage was recorded against a specific type. Wrapped
@@ -190,6 +200,7 @@ function build_report(PDO $pdo, string $start, string $end): array
         'top_selling' => $topSelling,
         'most_profitable' => $mostProfitable,
         'expense_breakdown' => $expenseBreakdown,
+        'expense_list' => $expenseList,
         'damage_list' => $damageList,
     ];
 }

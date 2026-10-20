@@ -105,3 +105,46 @@ document.addEventListener('click', (e) => {
         sessionStorage.setItem(KEY, sidebar.scrollTop);
     });
 })();
+
+/**
+ * User menu (top right): click the name to open a dropdown with
+ * "My Profile" and "Log Out". Closes on outside click, Esc, or when
+ * another popover (like the notification bell) is used.
+ */
+(function setupUserMenu() {
+    function parts() {
+        return {
+            btn: document.getElementById('userMenuBtn'),
+            dd: document.getElementById('userDropdown')
+        };
+    }
+    function setOpen(open) {
+        const { btn, dd } = parts();
+        if (!btn || !dd) return;
+        dd.classList.toggle('hidden', !open);
+        btn.setAttribute('aria-expanded', String(open));
+    }
+    function isOpen() {
+        const { dd } = parts();
+        return !!dd && !dd.classList.contains('hidden');
+    }
+
+    // Capture phase so it still runs when another widget stops propagation.
+    document.addEventListener('click', function (e) {
+        const { btn } = parts();
+        if (!btn) return;
+        if (e.target.closest && e.target.closest('#userMenuBtn')) {
+            setOpen(!isOpen());
+        } else if (isOpen() && !(e.target.closest && e.target.closest('#userDropdown'))) {
+            setOpen(false);
+        }
+    }, true);
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && isOpen()) {
+            setOpen(false);
+            const { btn } = parts();
+            if (btn) btn.focus();
+        }
+    });
+})();

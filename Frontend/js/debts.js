@@ -165,23 +165,26 @@ document.getElementById('paymentForm').addEventListener('submit', async (e) => {
  * ever paid against it, plus the original amount, total paid, and the
  * remaining balance.
  */
+let HISTORY_SALE = null; // the debt currently shown in the history modal
+
 async function openHistoryModal(saleId) {
   const d = DEBTS_CACHE.find(x => x.id == saleId);
   document.getElementById('historyContext').innerHTML =
     `<strong>${d ? (d.customer_name || 'Customer') : 'Customer'}</strong>${d && d.customer_phone ? ' &middot; ' + d.customer_phone : ''}${d ? ' &middot; ' + d.item_names : ''}`;
-  document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="muted">Loading...</td></tr>';
+  document.getElementById('historyBody').innerHTML = '<tr><td colspan="6" class="muted">Loading...</td></tr>';
   openModal('historyModal');
 
   const res = await API.get('debts.php', { history: saleId });
-  if (!res.success) { document.getElementById('historyBody').innerHTML = `<tr><td colspan="5" class="muted">${res.message}</td></tr>`; return; }
+  if (!res.success) { document.getElementById('historyBody').innerHTML = `<tr><td colspan="6" class="muted">${res.message}</td></tr>`; return; }
 
   const sale = res.data;
+  HISTORY_SALE = sale;
   document.getElementById('hist-original').textContent = money(sale.total_amount);
   document.getElementById('hist-paid').textContent = money(sale.total_paid);
   document.getElementById('hist-remaining').textContent = money(sale.remaining);
 
   if (!sale.payments.length) {
-    document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="muted">No payments recorded yet against this debt.</td></tr>';
+    document.getElementById('historyBody').innerHTML = '<tr><td colspan="6" class="muted">No payments recorded yet against this debt.</td></tr>';
     return;
   }
 
@@ -192,7 +195,78 @@ async function openHistoryModal(saleId) {
       <td>${p.method === 'online' ? 'Online' + (p.online_method ? ' (' + p.online_method + ')' : '') : 'Cash'}</td>
       <td>${p.recorded_by_name}</td>
       <td class="muted">${p.note || '—'}</td>
+      <td class="admin-only">
+        <button class="icon-action-btn edit-btn" title="Edit payment" onclick="openEditPayment(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg></button>
+        <button class="icon-action-btn delete-btn" title="Delete payment" onclick="deletePayment(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg></button>
+      </td>
     </tr>`).join('');
+  applyRoleVisibility(); // hides the Actions column for workers
+}
+
+/* ========================================================================
+   Edit / Delete a recorded payment (admin only - the server enforces it too)
+   ======================================================================== */
+function openEditPayment(paymentId) {
+  if (!HISTORY_SALE) return;
+  const p = HISTORY_SALE.payments.find(x => x.id == paymentId);
+  if (!p) return;
+
+  // The most this payment can be: what the debt totals, less every OTHER payment.
+  const maxAllowed = Math.max(Number(HISTORY_SALE.total_amount) - (Number(HISTORY_SALE.total_paid) - Number(p.amount)), 0);
+
+  document.getElementById('ep-id').value = p.id;
+  document.getElementById('ep-amount').value = p.amount;
+  document.getElementById('ep-amount').max = maxAllowed;
+  document.getElementById('ep-date').value = p.payment_date;
+  document.getElementById('ep-method').value = p.method === 'online' ? 'online' : 'cash_in_hand';
+  const epSel = document.getElementById('ep-online-method');
+  const epVal = p.online_method || '';
+  // An older payment may carry a method that is not in the list: keep it selectable so it is not lost on save.
+  if (epVal && ![...epSel.options].some(o => o.value === epVal)) epSel.add(new Option(epVal, epVal));
+  epSel.value = epVal || epSel.options[0].value;
+  document.getElementById('ep-online-method-field').classList.toggle('hidden', p.method !== 'online');
+  document.getElementById('ep-note').value = p.note || '';
+  document.getElementById('editPaymentContext').textContent =
+    `${HISTORY_SALE.customer_name || 'Customer'}${HISTORY_SALE.customer_phone ? ' (' + HISTORY_SALE.customer_phone + ')' : ''} — payment recorded by ${p.recorded_by_name}.`;
+  document.getElementById('ep-max-hint').textContent = `Cannot exceed ${money(maxAllowed)} (the debt's total less its other payments).`;
+  openModal('editPaymentModal');
+}
+
+document.getElementById('editPaymentForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const res = await API.put('debts.php', {
+    id: document.getElementById('ep-id').value,
+    amount: document.getElementById('ep-amount').value,
+    payment_date: document.getElementById('ep-date').value,
+    method: document.getElementById('ep-method').value,
+    online_method: document.getElementById('ep-online-method').value.trim(),
+    note: document.getElementById('ep-note').value.trim(),
+  });
+
+  if (!res.success) { toast(res.message, 'error'); return; }
+  toast(res.message);
+  closeModal('editPaymentModal');
+  refreshAfterPaymentChange();
+});
+
+async function deletePayment(paymentId) {
+  if (!HISTORY_SALE) return;
+  const p = HISTORY_SALE.payments.find(x => x.id == paymentId);
+  if (!p) return;
+  if (!confirm(`Delete this payment of ${money(p.amount)} made on ${fmtDate(p.payment_date)}?\n\nThe amount will be added back to the customer's remaining balance.`)) return;
+
+  const res = await API.del('debts.php', { payment_id: paymentId });
+  if (!res.success) { toast(res.message, 'error'); return; }
+  toast(res.message);
+  refreshAfterPaymentChange();
+}
+
+/** Refresh the open history modal and the debts table behind it, so every figure matches. */
+async function refreshAfterPaymentChange() {
+  const saleId = HISTORY_SALE ? HISTORY_SALE.id : null;
+  await loadDebts();
+  if (saleId) openHistoryModal(saleId);
 }
 
 function downloadDebtsExcel() {

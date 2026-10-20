@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
+require_once __DIR__ . '/../helpers/access_helper.php';
 
 $user = require_login();
 $pdo = get_db();
@@ -49,6 +50,11 @@ if ($method === 'GET') {
     foreach ($rows as &$row) {
         $row['display_name'] = $row['item_type'] === 'other' ? $row['item_name'] : $row['product_name'];
         $row['display_cost'] = $row['item_type'] === 'other' ? $row['manual_cost'] : $row['loss_value'];
+        // The loss on a stock product is quantity x buying price, so it would give the cost price away.
+        if (!is_admin_user($user) && $row['item_type'] !== 'other') {
+            $row['loss_value'] = null;
+            $row['display_cost'] = null;
+        }
     }
     unset($row);
 
@@ -117,7 +123,8 @@ if ($method === 'POST') {
             log_activity($pdo, $user, 'create', 'damage', $pdo->lastInsertId(),
                 'Recorded damage: ' . $qty . ' ' . ($variant ? $variant['unit'] : $product['unit']) . ' x "' . $label . '" - loss TZS ' . number_format($lossValue) . ' (' . clean($d['reason']) . ')');
 
-            respond(true, ['id' => $pdo->lastInsertId(), 'loss_value' => $lossValue], 'Damage/waste recorded and stock adjusted.');
+            $created = ['id' => $pdo->lastInsertId(), 'loss_value' => $lossValue];
+            respond(true, is_admin_user($user) ? $created : hide_fields($created, ['loss_value']), 'Damage/waste recorded and stock adjusted.');
         } else {
             // Non-stock item: equipment, material, furniture, etc. There is
             // no stock record, so the cost is entered by hand.

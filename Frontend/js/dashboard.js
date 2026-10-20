@@ -5,12 +5,13 @@ let DASHBOARD_DATA = null;
 
 (async function init() {
   await requireAuth();
+  if (typeof initDashHero === 'function') initDashHero(CURRENT_USER); // welcome banner (see js/dashboard-anim.js)
   const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
   document.getElementById('today-label').textContent = 'Today — ' + dateStr;
   document.getElementById('print-date-dashboard').textContent = dateStr + ' · ' + new Date().toLocaleTimeString('en-GB');
 
   const res = await API.get('dashboard.php');
-  if (!res.success) { toast(res.message || 'Could not load dashboard.', 'error'); return; }
+  if (!res.success) { if (window.stopStatSkeleton) stopStatSkeleton(); toast(res.message || 'Could not load dashboard.', 'error'); return; }
   const d = res.data;
   DASHBOARD_DATA = d;
 
@@ -26,6 +27,8 @@ let DASHBOARD_DATA = null;
   document.getElementById('d-services').textContent = d.stock.total_services;
   document.getElementById('d-month-sales').textContent = money(d.month.total_sales);
   document.getElementById('d-month-profit').textContent = money(d.month.net_profit);
+
+  if (window.animateStatValues) animateStatValues(); // count-up animation (see js/dashboard-anim.js)
 
   // Plain-words mirrors of the figures above, shown only in the printed
   // PDF (see .report-summary-text) instead of the on-screen stat cards.
@@ -48,34 +51,26 @@ let DASHBOARD_DATA = null;
         <td>${row.name} ${row.is_service == 1 ? '<span class="tag tag-gold">Service</span>' : ''}</td>
         <td>${row.qty_sold}</td>
         <td>${money(row.revenue)}</td>
-        <td class="gold">${money(row.profit)}</td>
+        <td class="gold admin-only">${money(row.profit)}</td>
       </tr>`).join('');
+    applyRoleVisibility(); // hides the Profit column for workers
   }
 
-  // Debt (madeni) due-date alerts
-  const alerts = d.debt_alerts || { due_today: [], overdue: [], due_today_total: 0, overdue_total: 0 };
+  // Debt (madeni) due-date alerts -> shown in the notification bell (top right).
+  // The on-screen banner cards were removed; only the plain-text lines used
+  // in the printed PDF are kept here.
+  const alerts = d.debt_alerts || { due_today: [], overdue: [], due_soon: [], due_today_total: 0, overdue_total: 0, due_soon_total: 0 };
+  alerts.due_soon = alerts.due_soon || [];
   if (alerts.overdue.length || alerts.due_today.length) {
     const parts = [];
     if (alerts.overdue.length) {
-      parts.push(`<strong>${alerts.overdue.length}</strong> debt(s) overdue, totaling <strong>${money(alerts.overdue_total)}</strong>`);
+      parts.push(`${alerts.overdue.length} debt(s) overdue, totaling ${money(alerts.overdue_total)}`);
     }
     if (alerts.due_today.length) {
-      parts.push(`<strong>${alerts.due_today.length}</strong> debt(s) due today, totaling <strong>${money(alerts.due_today_total)}</strong>`);
+      parts.push(`${alerts.due_today.length} debt(s) due today, totaling ${money(alerts.due_today_total)}`);
     }
-    const borderColor = alerts.overdue.length ? 'var(--red)' : 'var(--gold)';
-    const bg = alerts.overdue.length ? '#FEF6F5' : '#FDF3E3';
-
-    document.getElementById('debtAlertBanner').innerHTML = `
-      <div class="card mt-16 no-print" style="border-left:4px solid ${borderColor};background:${bg};">
-        <div class="flex-between">
-          <div>
-            <strong style="font-size:13px;"><svg class="ui-icon"><use href="assets/icons.svg#credit-card"></use></svg> Debt Alert</strong>
-            <div class="muted" style="font-size:12px;margin-top:2px;">${parts.join(' · ')}</div>
-          </div>
-          <a href="debts.html"><button class="btn btn-outline btn-sm">View Debts</button></a>
-        </div>
-      </div>
-      <p class="print-only report-summary-text" style="margin-top:14px;">Debt Alert: ${parts.join(', ').replace(/<\/?strong>/g, '')}.</p>`;
+    document.getElementById('debtAlertBanner').innerHTML =
+      `<p class="print-only report-summary-text" style="margin-top:14px;">Debt Alert: ${parts.join(', ')}.</p>`;
   }
 
   // Low stock alerts
@@ -98,21 +93,15 @@ let DASHBOARD_DATA = null;
         </table>
       </div>`;
 
-    document.getElementById('lowStockBanner').innerHTML = `
-      <div class="card no-print" style="border-left:4px solid var(--red);background:#FEF6F5;">
-        <div class="flex-between">
-          <div>
-            <strong style="font-size:13px;"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg> Stock Alert</strong>
-            <div class="muted" style="font-size:12px;margin-top:2px;">${d.low_stock_alerts.length} item(s) are running low and need restocking soon.</div>
-          </div>
-          <a href="products.html"><button class="btn btn-outline btn-sm">View Stock</button></a>
-        </div>
-      </div>
-      <p class="print-only report-summary-text">Stock Alert: ${d.low_stock_alerts.length} item(s) are running low and need restocking soon.</p>`;
+    document.getElementById('lowStockBanner').innerHTML =
+      `<p class="print-only report-summary-text">Stock Alert: ${d.low_stock_alerts.length} item(s) are running low and need restocking soon.</p>`;
   } else {
     document.getElementById('lowStockPrintTable').innerHTML =
       '<p class="muted" style="font-size:12.5px;">All stock levels were healthy at the time this was generated.</p>';
   }
+
+
+  buildNotifications(alerts, d.low_stock_alerts || []);
 })();
 
 /**
@@ -279,53 +268,75 @@ async function downloadLowStock(items) {
   window.print();
 }
 
-function downloadLowStockExcel(items) {
+/** Low stock Excel = the Purchases page's "Import Template" file, exactly:
+ *  same "Purchases" sheet headers and column widths, same "Instructions"
+ *  sheet, same .xlsx format - but filled with the items being bought
+ *  (quantities typed in the modal) instead of the two example rows.
+ *  Self-contained on purpose: it only needs the SheetJS (XLSX) library. */
+async function downloadLowStockExcel(items) {
   if (!items || !items.length) return;
+  // Make sure the colour-capable Excel library is the one in use (see ui.js).
+  if (typeof loadXlsxStyle === 'function') await loadXlsxStyle();
+  if (typeof XLSX === 'undefined') {
+    toast('The file library could not load - check your internet connection and try again.', 'error');
+    return;
+  }
 
-  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-  const rows = [
-    ['Business Name:', 'eDesk Print & Digital'],
-    ['Location:', 'Mbeya, Iyunga (Moja One)'],
-    ['Phone:', '+255 763 399 399'],
-    [],
-    ['Supplier Name:', ''],
-    ['Supplier Contact:', ''],
-    ['Date:', today],
-    ['Purchase Ref No:', ''],
-    [],
-    ['S/N', 'Item Description', 'Unit', 'Quantity', 'Unit Price', 'Total', 'Remarks'],
-    ...items.map((p, i) => [
-      i + 1, p.name, p.unit, p.buy_qty, '', '',
-      `${p.stock_quantity} ${p.unit} left in stock`,
-    ]),
-    [],
-    ['Subtotal:', ''],
-    ['Transport Cost:', ''],
-    ['Other Expenses:', ''],
-    ['Grand Total:', ''],
-    [],
-    ['Prepared By - Name:', ''],
-    ['Prepared By - Signature:', ''],
-    ['Supplier - Name:', ''],
-    ['Supplier - Signature:', ''],
-  ];
-  exportToExcel('eDESK_Purchase_Order_' + new Date().toISOString().slice(0, 10) + '.csv', ['PURCHASE ORDER / SUPPLIER PURCHASE'], rows);
+  const num = (v) => (v !== undefined && v !== null && Number(v) > 0) ? Number(v) : '';
+  const headers = ['Product Name', 'Category', 'Description', 'Unit', 'Quantity', 'Buying Price', 'Selling Price'];
+  const dataRows = items.map(p => [
+    p.product_name || p.name || '',
+    p.category_name || '',
+    p.variant_name || '',
+    p.unit || '',
+    p.buy_qty > 0 ? p.buy_qty : '',
+    num(p.buying_price),   // never sent to workers, so blank for them
+    num(p.selling_price),
+  ]);
+
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+  sheet['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+
+  // Amber header row (same look for the Purchases template and the
+  // Dashboard low stock Excel). Needs the xlsx-js-style build of SheetJS.
+  headers.forEach((_, c) => {
+      const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
+      if (cell) cell.s = { fill: { patternType: 'solid', fgColor: { rgb: 'FFC000' } }, font: { color: { rgb: '000000' } } };
+  });
+
+  const instructions = XLSX.utils.aoa_to_sheet([
+    ['How to use this template'],
+    [''],
+    ['1. One row per item you are purchasing.'],
+    ['2. "Product Name" is required - it is matched against your existing Product list, or a new one is created if it doesn\'t exist yet.'],
+    ['3. "Description" is only for a product that already has types (e.g. "Pen" with Obama Pen, Marker Pen...). Leave it blank for a plain product.'],
+    ['4. "Unit", "Quantity" and "Buying Price" are required for every row.'],
+    ['5. "Selling Price" and "Category" are optional - leave blank to keep the product\'s existing price/category.'],
+    ['6. Delete the two example rows on the "Purchases" tab before uploading, or just overwrite them with your own.'],
+    ['7. Save this file, then upload it from the "Import from Excel / CSV" tab on the Purchases page.'],
+  ]);
+  instructions['!cols'] = [{ wch: 100 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet, 'Purchases');
+  XLSX.utils.book_append_sheet(wb, instructions, 'Instructions');
+  XLSX.writeFile(wb, 'eDesk_Low Stock_' + new Date().toISOString().slice(0, 10) + '.xlsx');
 }
 
 function downloadDashboardExcel() {
   if (!DASHBOARD_DATA) { toast('Please wait for the dashboard to finish loading.', 'error'); return; }
   const d = DASHBOARD_DATA;
+  const isAdmin = CURRENT_USER && CURRENT_USER.role === 'admin';
   const rows = [
     ['Sales Today', d.today.total_sales],
     ['Transactions Today', d.today.transactions],
     ['Expenses Today', d.today.total_expenses],
-    ['Damage Loss Today', d.today.total_damage_loss],
-    ['Profit Today', d.today.net_profit],
+    ...(isAdmin ? [['Damage Loss Today', d.today.total_damage_loss], ['Profit Today', d.today.net_profit]] : []),
     [],
     ['Total Products', d.stock.total_products],
     ['Total Services', d.stock.total_services],
     ['Sales This Month', d.month.total_sales],
-    ['Net Profit This Month', d.month.net_profit],
+    ...(isAdmin ? [['Net Profit This Month', d.month.net_profit]] : []),
     [],
     ['LOW STOCK ALERTS'],
     ['Product', 'Current Stock', 'Reorder Level', 'Unit'],
@@ -334,3 +345,158 @@ function downloadDashboardExcel() {
   exportToExcel('eDESK_Dashboard_' + new Date().toISOString().slice(0, 10) + '.csv', ['Metric', 'Value'], rows);
 }
 
+
+
+/* =====================================================================
+ * Notification bell (top right, after the Download button)
+ * One place for everything: overdue debts, debts due today, debts due
+ * soon (next 3 days) and low-stock warnings.
+ *
+ * Only UNREAD notifications are shown. Opening the bell marks what it
+ * showed as read; that is remembered per logged-in user (kept in this
+ * browser), so it stays gone after logout / login. A notification comes
+ * back only when something NEW appears - a different debt, a debt that
+ * moved to a later stage (soon -> today -> overdue), or an item that
+ * runs low again after being restocked.
+ * ===================================================================== */
+function notifEsc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function notifDaysBetween(dateStr, baseStr) {
+  const a = new Date(dateStr + 'T00:00:00');
+  const b = new Date(baseStr + 'T00:00:00');
+  return Math.round((a - b) / 86400000);
+}
+
+function notifStoreKey() {
+  const id = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.id) ? CURRENT_USER.id : 'anon';
+  return 'edesk_seen_notifs_u' + id;
+}
+function notifLoadSeen() {
+  try { return new Set(JSON.parse(localStorage.getItem(notifStoreKey()) || '[]')); } catch (e) { return new Set(); }
+}
+function notifSaveSeen(set) {
+  try { localStorage.setItem(notifStoreKey(), JSON.stringify(Array.from(set))); } catch (e) { /* storage blocked: alerts simply show again next visit */ }
+}
+
+function buildNotifications(alerts, lowStock) {
+  const today = (DASHBOARD_DATA && DASHBOARD_DATA.shop_today) || new Date().toISOString().slice(0, 10);
+  const MAX_SUB = 3;
+
+  // Every individual alert gets a stable key so "seen" can be remembered.
+  const tag = (rows, kind, dateOf) => rows.map(r => Object.assign({}, r, {
+    _key: `debt:${kind}:${r.sale_id != null ? r.sale_id : (r.customer_name || '?')}:${dateOf(r)}`
+  }));
+  const groups = [
+    { id: 'overdue', sev: 'red',  icon: 'alert-triangle', title: 'Overdue debts',   href: 'debts.html',    cta: 'View Debts',
+      rows: tag(alerts.overdue,   'overdue', r => r.deadline || '') },
+    { id: 'today',   sev: 'gold', icon: 'coins',          title: 'Debts due today', href: 'debts.html',    cta: 'View Debts',
+      rows: tag(alerts.due_today, 'today',   () => today) },
+    { id: 'soon',    sev: 'blue', icon: 'calendar',       title: 'Debts due soon',  href: 'debts.html',    cta: 'View Debts',
+      rows: tag(alerts.due_soon,  'soon',    r => r.deadline || '') },
+    { id: 'stock',   sev: 'red',  icon: 'package',        title: 'Low stock',       href: 'products.html', cta: 'View Stock',
+      rows: lowStock.map(p => Object.assign({}, p, { _key: 'stock:' + (p.id != null ? p.id : p.name) })) }
+  ];
+
+  // Forget "seen" marks for things that no longer apply (debt paid, item
+  // restocked) so they notify again if they ever come back.
+  const allKeys = new Set();
+  groups.forEach(g => g.rows.forEach(r => allKeys.add(r._key)));
+  const seen = new Set(Array.from(notifLoadSeen()).filter(k => allKeys.has(k)));
+  notifSaveSeen(seen);
+
+  const bell = document.getElementById('notifBell');
+  const badge = document.getElementById('notifBadge');
+  const panel = document.getElementById('notifPanel');
+  const list = document.getElementById('notifList');
+  const count = document.getElementById('notifCount');
+  if (!bell || !panel) return;
+
+  const debtRows = (rows, labelFn) => {
+    const shown = rows.slice(0, MAX_SUB).map(r =>
+      `<li><span>${notifEsc(r.customer_name || 'Customer')} — ${money(r.remaining)}</span><span>${labelFn(r)}</span></li>`).join('');
+    const more = rows.length > MAX_SUB ? `<li><span>+ ${rows.length - MAX_SUB} more</span><span></span></li>` : '';
+    return `<ul class="notif-sub">${shown}${more}</ul>`;
+  };
+  const sum = rows => rows.reduce((t, r) => t + (parseFloat(r.remaining) || 0), 0);
+
+  // Build the card for one group using ONLY its unread rows.
+  const card = (g, rows) => {
+    let text, extra;
+    if (g.id === 'overdue') {
+      text = `<strong>${rows.length}</strong> debt(s) overdue, totaling <strong>${money(sum(rows))}</strong>`;
+      extra = debtRows(rows, r => { const n = Math.abs(notifDaysBetween(r.deadline, today)); return n + ' day' + (n === 1 ? '' : 's') + ' late'; });
+    } else if (g.id === 'today') {
+      text = `<strong>${rows.length}</strong> debt(s) due today, totaling <strong>${money(sum(rows))}</strong>`;
+      extra = debtRows(rows, () => 'today');
+    } else if (g.id === 'soon') {
+      text = `<strong>${rows.length}</strong> debt(s) due in the next 3 days, totaling <strong>${money(sum(rows))}</strong>`;
+      extra = debtRows(rows, r => { const n = notifDaysBetween(r.deadline, today); return 'in ' + n + ' day' + (n === 1 ? '' : 's'); });
+    } else {
+      text = `<strong>${rows.length}</strong> item(s) are running low and need restocking soon.`;
+      const shown = rows.slice(0, MAX_SUB).map(p =>
+        `<li><span>${notifEsc(p.name)}</span><span>${notifEsc(p.stock_quantity)} ${notifEsc(p.unit)} left</span></li>`).join('');
+      const more = rows.length > MAX_SUB ? `<li><span>+ ${rows.length - MAX_SUB} more</span><span></span></li>` : '';
+      extra = `<ul class="notif-sub">${shown}${more}</ul>`;
+    }
+    return `
+      <div class="notif-item sev-${g.sev}">
+        <div class="notif-ic"><svg class="ui-icon"><use href="assets/icons.svg#${g.icon}"></use></svg></div>
+        <div class="notif-body">
+          <div class="notif-title">${g.title}</div>
+          <div class="notif-text">${text}</div>
+          ${extra}
+          <a class="notif-link" href="${g.href}">${g.cta} →</a>
+        </div>
+      </div>`;
+  };
+
+  const emptyHtml = '<div class="notif-empty"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg>No new notifications.<br>You\'re all caught up.</div>';
+
+  // What is unread right now
+  let unread = groups.map(g => ({ g, rows: g.rows.filter(r => !seen.has(r._key)) })).filter(x => x.rows.length);
+  const unreadKeys = [];
+  unread.forEach(x => x.rows.forEach(r => unreadKeys.push(r._key)));
+
+  const showBadge = (n) => {
+    if (n > 0) {
+      badge.textContent = n > 99 ? '99+' : n;
+      badge.classList.remove('hidden');
+      bell.classList.add('has-alerts');
+      count.textContent = n + ' new';
+    } else {
+      badge.classList.add('hidden');
+      bell.classList.remove('has-alerts');
+      count.textContent = '';
+    }
+  };
+
+  list.innerHTML = unread.length ? unread.map(x => card(x.g, x.rows)).join('') : emptyHtml;
+  showBadge(unreadKeys.length);
+
+  let markedThisOpen = false;
+  const close = () => {
+    if (panel.classList.contains('hidden')) return;
+    panel.classList.add('hidden');
+    bell.setAttribute('aria-expanded', 'false');
+    // Once the person has looked at them, they disappear.
+    if (markedThisOpen) { list.innerHTML = emptyHtml; markedThisOpen = false; }
+  };
+  bell.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!panel.classList.contains('hidden')) { close(); return; }
+    panel.classList.remove('hidden');
+    bell.setAttribute('aria-expanded', 'true');
+    if (unreadKeys.length) {
+      unreadKeys.forEach(k => seen.add(k));   // mark as read (remembered for this user)
+      notifSaveSeen(seen);
+      unreadKeys.length = 0;
+      markedThisOpen = true;
+      showBadge(0);                            // the red number clears as soon as they are seen
+    }
+  });
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+}

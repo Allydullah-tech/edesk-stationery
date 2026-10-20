@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
+require_once __DIR__ . '/../helpers/access_helper.php';
 
 $user = require_login();
 $pdo = get_db();
@@ -13,7 +14,7 @@ if ($method === 'GET') {
         $stmt->execute([(int)$_GET['id']]);
         $row = $stmt->fetch();
         if (!$row) respond(false, null, 'Type not found.', 404);
-        respond(true, $row);
+        respond(true, is_admin_user($user) ? $row : hide_fields($row, ['buying_price']));
     }
 
     // Distinct type names already used anywhere in the system, for the
@@ -32,7 +33,8 @@ if ($method === 'GET') {
 
     $stmt = $pdo->prepare('SELECT * FROM product_variants WHERE product_id = ? ORDER BY variant_name ASC');
     $stmt->execute([(int)$_GET['product_id']]);
-    respond(true, $stmt->fetchAll());
+    $rows = $stmt->fetchAll();
+    respond(true, is_admin_user($user) ? $rows : hide_fields_in_rows($rows, ['buying_price']));
 }
 
 if ($method === 'POST') {

@@ -12,7 +12,9 @@ const API = {
       credentials: 'include',
       headers: {},
     };
-    if (data !== null) {
+    if (data instanceof FormData) {
+      opts.body = data; // a file upload: the browser sets the multipart Content-Type itself
+    } else if (data !== null) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(data);
     }

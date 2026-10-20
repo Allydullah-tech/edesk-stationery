@@ -2,10 +2,18 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
+require_once __DIR__ . '/../helpers/access_helper.php';
 
 $user = require_login();
 $pdo = get_db();
 $method = $_SERVER['REQUEST_METHOD'];
+
+/** Workers never receive buying/cost prices or the stock value worked out from them. */
+function hide_cost_in_product_rows(array $user, array $rows): array
+{
+    if (is_admin_user($user)) return $rows;
+    return hide_fields_in_rows($rows, ['buying_price', 'min_buying', 'max_buying', 'variant_stock_value']);
+}
 
 if ($method === 'GET') {
     if (isset($_GET['id'])) {
@@ -22,6 +30,10 @@ if ($method === 'GET') {
             $row['variants'] = $vStmt->fetchAll();
         } catch (PDOException $e) {
             $row['variants'] = [];
+        }
+        if (!is_admin_user($user)) {
+            $row = hide_fields($row, ['buying_price']);
+            $row['variants'] = hide_fields_in_rows($row['variants'], ['buying_price']);
         }
         respond(true, $row);
     }
@@ -72,7 +84,7 @@ if ($method === 'GET') {
             ) v ON v.product_id = p.id
             $where ORDER BY p.name ASC");
         $stmt->execute($params);
-        respond(true, $stmt->fetchAll());
+        respond(true, hide_cost_in_product_rows($user, $stmt->fetchAll()));
     } catch (PDOException $e) {
         // product_variants table not present yet (the upgrade script
         // hasn't been run) - fall back to the plain product list so the
@@ -81,7 +93,7 @@ if ($method === 'GET') {
                                 LEFT JOIN categories c ON c.id = p.category_id
                                 $where ORDER BY p.name ASC");
         $stmt->execute($params);
-        respond(true, $stmt->fetchAll());
+        respond(true, hide_cost_in_product_rows($user, $stmt->fetchAll()));
     }
 }
 

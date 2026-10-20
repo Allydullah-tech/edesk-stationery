@@ -9,10 +9,13 @@ let EDITING_SALE_ID = null;
 let HIGHLIGHT_INDEX = -1;
 let CURRENT_MATCHES = [];
 let CART = []; // [{product_id, variant_id, name, unit, quantity, unit_price, subtotal, materials}]
-// Products used to provide a service (service sales only)
+// Service stock items used to provide a service (service sales only).
+// They come from the Service Purchases stock - never from the Product stock.
 let MATERIALS_USED = false;
-let MATERIAL_VARIANT_CACHE = {};
-let HELD_STOCK = {}; // while EDITING a sale: stock that sale already holds, key -> quantity
+let SERVICE_STOCK = [];       // [{id, name, unit, stock_quantity}]
+let SERVICE_STOCK_ERROR = '';
+let HELD_STOCK = {};          // while EDITING a sale: PRODUCT stock that sale already holds, key -> quantity
+let HELD_SERVICE = {};        // while EDITING a sale: SERVICE stock that sale already holds, service item id -> quantity
 
 (async function init() {
     await requireAuth();
@@ -25,18 +28,22 @@ let HELD_STOCK = {}; // while EDITING a sale: stock that sale already holds, key
     document.getElementById('s-change-left').addEventListener('change', updateChangeFieldVisibility);
 
     setupProductSearch();
+    // opened from the dashboard shortcut buttons (?new=1)
+    if (new URLSearchParams(location.search).get('new') === '1') { openSaleModal(); history.replaceState(null, '', location.pathname); }
 })();
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 async function loadProductOptions() {
-    const [pRes, sRes] = await Promise.all([
+    const [pRes, sRes, stockRes] = await Promise.all([
         API.get('products.php', { status: 'active', type: '0' }),
         API.get('products.php', { status: 'active', type: '1' }),
+        API.get('service_purchases.php', { view: 'items' }), // Service Purchases stock (separate from products)
     ]);
     if (pRes.success) PRODUCT_OPTIONS = pRes.data;
     if (sRes.success) SERVICE_OPTIONS = sRes.data;
-    MATERIAL_VARIANT_CACHE = {}; // description stock must never be stale
+    SERVICE_STOCK = stockRes.success ? stockRes.data : [];
+    SERVICE_STOCK_ERROR = stockRes.success ? '' : (stockRes.message || '');
 }
 
 function currentOptionList() {
@@ -319,7 +326,7 @@ function renderCart() {
     } else {
         tbody.innerHTML = CART.map((c, i) => `
       <tr>
-        <td>${c.name}${(c.materials && c.materials.length) ? `<div class="help-text" style="margin:2px 0 0;">Used: ${c.materials.map(m => `${escSales(m.name)} × ${m.quantity * c.quantity}`).join(', ')}</div>` : ''}</td>
+        <td>${c.name}${(c.materials && c.materials.length) ? `<div class="help-text" style="margin:2px 0 0;">Used (service stock): ${c.materials.map(m => `${escSales(m.name)} × ${m.quantity * c.quantity}`).join(', ')}</div>` : ''}${(c.legacy_materials && c.legacy_materials.length) ? `<div class="help-text" style="margin:2px 0 0;">Was taken from Product stock: ${c.legacy_materials.map(m => `${escSales(m.name)} × ${m.quantity}`).join(', ')} — returned to Product stock when you save. Add the items again above to take them from service stock.</div>` : ''}</td>
         <td>${c.quantity} ${c.unit}</td>
         <td>${money(c.unit_price)}</td>
         <td><strong>${money(c.subtotal)}</strong></td>
@@ -376,7 +383,7 @@ function resetFilter() {
 
 async function loadSales() {
     const tbody = document.getElementById('salesBody');
-    tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="muted">Loading...</td></tr>';
 
     const start = document.getElementById('fStart').value;
     const end = document.getElementById('fEnd').value;
@@ -384,7 +391,7 @@ async function loadSales() {
         (start === end ? fmtDate(start) : fmtDate(start) + ' to ' + fmtDate(end)) + ' · ' + new Date().toLocaleString('en-GB');
 
     const res = await API.get('sales.php', { start, end });
-    if (!res.success) { tbody.innerHTML = `<tr><td colspan="7" class="muted">${res.message}</td></tr>`; return; }
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="8" class="muted">${res.message}</td></tr>`; return; }
 
     SALES_CACHE = res.data;
 
@@ -409,14 +416,15 @@ async function loadSales() {
     document.getElementById('s-count-print').textContent = res.data.length;
     document.getElementById('s-credit-print').textContent = money(totalCredit);
 
-    if (!res.data.length) { tbody.innerHTML = '<tr><td colspan="7" class="muted">No sales recorded for this period.</td></tr>'; return; }
+    if (!res.data.length) { tbody.innerHTML = '<tr><td colspan="8" class="muted">No sales recorded for this period.</td></tr>'; return; }
 
-    tbody.innerHTML = res.data.map(s => `
+    tbody.innerHTML = res.data.map(s => { const sl = saleItemLines(s); return `
     <tr>
       <td>${fmtDate(s.sale_date)}</td>
-      <td>${s.item_names || '—'}${s.item_count > 1 ? ` <span class="tag tag-gray">${s.item_count} items</span>` : ''}</td>
+      <td style="vertical-align:top;">${sl.items}${s.item_count > 1 ? `<div style="margin-top:2px;"><span class="tag tag-gray">${s.item_count} items</span></div>` : ''}</td>
+      <td style="vertical-align:top;">${sl.descriptions}</td>
       <td><strong>${money(s.total_amount)}</strong></td>
-      <td class="gold">${money(s.total_profit)}</td>
+      <td class="gold admin-only">${money(s.total_profit)}</td>
       <td>${paymentTag(s)}${changeTag(s)}</td>
       <td>${s.sold_by_name}</td>
       <td class="no-print">
@@ -425,9 +433,39 @@ async function loadSales() {
         <button class="icon-action-btn edit-btn" title="Edit" onclick="editSale(${s.id})"><svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg></button>
         <button class="icon-action-btn delete-btn" title="Delete" onclick="deleteSale(${s.id})"><svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg></button>
       </td>
-    </tr>`).join('');
+    </tr>`; }).join('');
 
   applyRoleVisibility();
+}
+
+/**
+ * Sales History: the Items column lists each product/service name once, and the
+ * Descriptions column lists its descriptions one under another inside the same cell
+ * (not as extra table rows). Both cells are built from the same lines, so a name sits
+ * level with its first description and the next item starts on the next line.
+ * e.g.   Counter Book   Q5
+ *                       Q4
+ *                       Q3
+ */
+function saleItemLines(s) {
+  const lines = Array.isArray(s.item_lines) ? s.item_lines : [];
+  if (!lines.length) return { items: s.item_names ? escSales(s.item_names) : '—', descriptions: '—' };
+
+  const groups = [];
+  const where = {};
+  lines.forEach(l => {
+    const key = String(l.name).trim().toLowerCase();
+    if (where[key] === undefined) { where[key] = groups.length; groups.push({ name: l.name, descs: [] }); }
+    groups[where[key]].descs.push(String(l.description || '').trim());
+  });
+
+  const line = text => `<div style="white-space:nowrap;line-height:1.5;min-height:1.5em;">${text}</div>`;
+  let items = '', descriptions = '';
+  groups.forEach(g => g.descs.forEach((d, i) => {
+    items += line(i === 0 ? escSales(g.name) : '&nbsp;');
+    descriptions += line(d ? escSales(d) : '—');
+  }));
+  return { items, descriptions };
 }
 
 function paymentTag(s) {
@@ -459,6 +497,7 @@ function openSaleModal() {
   delete document.getElementById('s-price').dataset.touched;
   EDITING_SALE_ID = null;
   HELD_STOCK = {};
+  HELD_SERVICE = {};
   CART = [];
   loadProductOptions(); // fresh stock figures for this sale
   clearItemError();
@@ -500,14 +539,17 @@ async function editSale(id) {
   CART = s.items.map(item => ({
     product_id: item.product_id, variant_id: item.variant_id || null, name: item.product_name, unit: item.unit || '',
     quantity: Number(item.quantity), unit_price: Number(item.unit_price), subtotal: Number(item.subtotal), is_service: !!Number(item.is_service),
-    materials: (item.materials || []).filter(m => m.product_id).map(m => ({ product_id: m.product_id, variant_id: m.variant_id || null, quantity: Number(m.quantity), name: m.name })),
+    materials: (item.materials || []).filter(m => m.service_item_id).map(m => ({ service_item_id: m.service_item_id, quantity: Number(m.quantity), name: m.name })),
+    // Older sales took their items from PRODUCT stock. They are returned to Product stock when the sale is saved.
+    legacy_materials: (item.materials || []).filter(m => m.legacy).map(m => ({ name: m.name, quantity: Number(m.total_quantity) })),
   }));
   // Stock this sale already took out - it is given back if the sale is changed, so
   // it still counts as available while editing.
   HELD_STOCK = {};
+  HELD_SERVICE = {};
   s.items.forEach(item => {
     if (Number(item.is_service)) {
-      (item.materials || []).forEach(m => { if (m.product_id) holdStock(m.product_id, m.variant_id, Number(m.total_quantity)); });
+      (item.materials || []).forEach(m => { if (m.service_item_id) holdService(m.service_item_id, Number(m.total_quantity)); });
     } else {
       holdStock(item.product_id, item.variant_id, Number(item.quantity));
     }
@@ -568,7 +610,7 @@ document.getElementById('saleForm').addEventListener('submit', async (e) => {
 
   const payload = {
     change_amount: changeAmount,
-    items: CART.map(c => ({ product_id: c.product_id, variant_id: c.variant_id || null, quantity: c.quantity, unit_price: c.unit_price, materials: (c.materials || []).map(m => ({ product_id: m.product_id, variant_id: m.variant_id || null, quantity: m.quantity })) })),
+    items: CART.map(c => ({ product_id: c.product_id, variant_id: c.variant_id || null, quantity: c.quantity, unit_price: c.unit_price, materials: (c.materials || []).map(m => ({ service_item_id: m.service_item_id, quantity: m.quantity })) })),
     customer_name: customerName,
     customer_phone: customerPhone,
     sale_date: document.getElementById('s-date').value,
@@ -612,15 +654,16 @@ async function deleteSale(id) {
 }
 
 function downloadSalesExcel() {
+  const isAdmin = CURRENT_USER && CURRENT_USER.role === 'admin';
   const rows = SALES_CACHE.map(s => [
-    s.sale_date, s.item_names || '', s.item_count, s.total_amount, s.total_profit,
+    s.sale_date, s.item_names || '', s.item_count, s.total_amount, ...(isAdmin ? [s.total_profit] : []),
     s.payment_method === 'credit' ? 'Credit' : (s.cash_type === 'online' ? s.online_method : 'Cash'),
     s.customer_name || '', s.customer_phone || '', s.sold_by_name,
     Number(s.change_amount) || 0, Number(s.change_collected) || 0, Number(s.change_remaining) || 0,
     changeStatusLabel(s.change_status),
   ]);
   exportToExcel('eDESK_Sales_' + document.getElementById('fStart').value + '_to_' + document.getElementById('fEnd').value + '.csv',
-    ['Date', 'Items', 'Item Count', 'Total', 'Profit', 'Payment', 'Customer', 'Customer Phone', 'Sold By',
+    ['Date', 'Items', 'Item Count', 'Total', ...(isAdmin ? ['Profit'] : []), 'Payment', 'Customer', 'Customer Phone', 'Sold By',
      'Customer Change', 'Change Collected', 'Change Remaining', 'Change Status'], rows);
 }
 
@@ -715,15 +758,16 @@ async function submitChangeCollection() {
 
 /* =========================================================
    Products used to provide a SERVICE.
-   The customer is always charged the full price. The products come
-   out of stock and their cost only reduces profit - never the sale
-   amount or the cash to be counted.
+   The customer is always charged the full price. The products only come
+   out of stock - their cost is not deducted from the service profit, and
+   it never changes the sale amount or the cash to be counted.
    ========================================================= */
 function escSales(t) {
     return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/* ---- Stock accounting for the cart (a product's stock is shared by direct sales and by services that use it) ---- */
+/* ---- Stock accounting for the cart ---- */
+// PRODUCT stock: only products sold directly use it. Services take their items from SERVICE stock below.
 function stockKey(productId, variantId) { return productId + ':' + (variantId || 0); }
 
 function holdStock(productId, variantId, qty) {
@@ -733,45 +777,48 @@ function holdStock(productId, variantId, qty) {
 
 function stockHeld(productId, variantId) { return HELD_STOCK[stockKey(productId, variantId)] || 0; }
 
-// How much of this product/description is already used by the lines in the cart
-// (sold directly, or used up by a service).
+// How much of this product/description is already sold by the lines in the cart.
 function stockUsedInCart(productId, variantId) {
     const key = stockKey(productId, variantId);
     let used = 0;
     CART.forEach(c => {
-        if (c.is_service) {
-            (c.materials || []).forEach(m => { if (stockKey(m.product_id, m.variant_id) === key) used += m.quantity * c.quantity; });
-        } else if (stockKey(c.product_id, c.variant_id) === key) {
-            used += c.quantity;
-        }
+        if (!c.is_service && stockKey(c.product_id, c.variant_id) === key) used += c.quantity;
     });
     return used;
 }
 
-// What is still free to use right now: stock in the shop - what the cart already uses.
-function stockLeft(productId, variantId, dbStock) {
-    return Number(dbStock) + stockHeld(productId, variantId) - stockUsedInCart(productId, variantId);
+// SERVICE stock (Service Purchases): the items services use up. Completely separate from product stock.
+function holdService(itemId, qty) { HELD_SERVICE[itemId] = (HELD_SERVICE[itemId] || 0) + qty; }
+
+function serviceStockUsedInCart(itemId) {
+    let used = 0;
+    CART.forEach(c => {
+        if (!c.is_service) return;
+        (c.materials || []).forEach(m => { if (m.service_item_id == itemId) used += m.quantity * c.quantity; });
+    });
+    return used;
 }
 
-function variantStock(productId, variantId) {
-    const v = (MATERIAL_VARIANT_CACHE[productId] || []).find(x => x.id == variantId);
-    return v ? Number(v.stock_quantity) : 0;
+// What is still free to use right now: service stock in the shop + what an edited sale already holds - what the cart uses.
+function serviceStockLeft(item) {
+    return Number(item.stock_quantity) + (HELD_SERVICE[item.id] || 0) - serviceStockUsedInCart(item.id);
 }
 
-// Returns an error message if the products used for this service line are not in stock, else ''.
+// Returns an error message if the items used for this service line are not in service stock, else ''.
 function materialsStockProblem(materials, lineQty) {
     for (const m of materials) {
-        const dbStock = m.variant_id ? variantStock(m.product_id, m.variant_id) : Number((PRODUCT_OPTIONS.find(p => p.id == m.product_id) || {}).stock_quantity || 0);
-        const left = stockLeft(m.product_id, m.variant_id, dbStock);
+        const item = SERVICE_STOCK.find(x => x.id == m.service_item_id);
+        if (!item) return `"${m.name}" is not in the Service Purchases stock.`;
+        const left = serviceStockLeft(item);
         const need = m.quantity * lineQty;
-        if (left <= 0) return `"${m.name}" is out of stock, so it cannot be used for this service.`;
-        if (left < need) return `Not enough stock of "${m.name}". This needs ${need} but only ${left} ${m.unit || ''} left.`.replace('  ', ' ');
+        if (left <= 0) return `"${m.name}" is out of service stock, so it cannot be used for this service.`;
+        if (left < need) return `Not enough service stock of "${m.name}". This needs ${need} but only ${left} ${item.unit || ''} left.`.replace('  ', ' ');
     }
     return '';
 }
 
 function sameMaterials(a, b) {
-    const key = list => (list || []).map(m => `${m.product_id}:${m.variant_id || 0}:${m.quantity}`).sort().join('|');
+    const key = list => (list || []).map(m => `${m.service_item_id}:${m.quantity}`).sort().join('|');
     return key(a) === key(b);
 }
 
@@ -788,18 +835,15 @@ function resetMaterialsForm() {
     setMaterialsUsed(false);
 }
 
-// One searchable "product used" row: type to search, pick from the list, set the quantity.
+// One searchable "item used" row: type to search the Service Purchases stock, pick from the list, set the quantity.
 function addMaterialRow() {
     const row = document.createElement('div');
     row.className = 'material-row';
     row.style.cssText = 'border:1px solid #e3e6ec;border-radius:8px;padding:10px;margin-bottom:8px;';
     row.innerHTML = `
       <div class="field autocomplete" style="margin-bottom:8px;">
-        <input type="text" class="mat-search" placeholder="Search the product used..." autocomplete="off">
+        <input type="text" class="mat-search" placeholder="Search service stock..." autocomplete="off">
         <div class="autocomplete-list hidden mat-suggestions"></div>
-      </div>
-      <div class="field hidden mat-type-field" style="margin-bottom:8px;">
-        <select class="mat-type"></select>
       </div>
       <div class="flex gap-8" style="align-items:center;">
         <input type="number" class="mat-qty" min="1" step="1" value="1" style="max-width:90px;" title="Quantity used per service">
@@ -810,33 +854,30 @@ function addMaterialRow() {
 
     const input = row.querySelector('.mat-search');
     const list = row.querySelector('.mat-suggestions');
-    const typeField = row.querySelector('.mat-type-field');
-    const typeSel = row.querySelector('.mat-type');
+    const hint = row.querySelector('.mat-hint');
     let matches = [];
     let hi = 0;
-    row._product = null;
-    row._variants = [];
+    row._item = null;
 
     const paint = () => list.querySelectorAll('.autocomplete-item').forEach((el, i) => el.classList.toggle('highlighted', i === hi));
 
     const show = () => {
         const q = input.value.trim().toLowerCase();
-        matches = (q ? PRODUCT_OPTIONS.filter(p => p.name.toLowerCase().includes(q)) : PRODUCT_OPTIONS).slice(0, 8);
-        // Products with nothing left in stock cannot be used - they are shown greyed out.
-        // (For products with descriptions this is the combined stock; each description is checked once it is chosen.)
-        const left = p => Number(p.variant_count) > 0 ? Number(p.stock_quantity) : stockLeft(p.id, null, p.stock_quantity);
-        hi = Math.max(0, matches.findIndex(p => left(p) > 0));
+        matches = (q ? SERVICE_STOCK.filter(i => i.name.toLowerCase().includes(q)) : SERVICE_STOCK).slice(0, 8);
+        // Items with nothing left in service stock cannot be used - they are shown greyed out.
+        hi = Math.max(0, matches.findIndex(i => serviceStockLeft(i) > 0));
         if (!matches.length) {
-            list.innerHTML = '<div class="autocomplete-empty">No matching product found in your Products list.</div>';
+            list.innerHTML = `<div class="autocomplete-empty">${SERVICE_STOCK.length
+                ? 'No matching item in the Service Purchases stock.'
+                : escSales(SERVICE_STOCK_ERROR || 'No service stock yet. Record a purchase on the Service Purchases page first.')}</div>`;
         } else {
-            list.innerHTML = matches.map((p, i) => {
-                const out = left(p) <= 0;
-                const meta = out ? 'Out of stock'
-                    : (Number(p.variant_count) > 0 ? p.variant_count + ' description(s)' : left(p) + ' ' + escSales(p.unit) + ' in stock');
+            list.innerHTML = matches.map((it, i) => {
+                const left = serviceStockLeft(it);
+                const out = left <= 0;
                 return `
-              <div class="autocomplete-item${i === hi ? ' highlighted' : ''}" data-id="${p.id}" data-out="${out ? 1 : 0}"${out ? ' style="opacity:.45;cursor:not-allowed;"' : ''}>
-                <span class="name">${escSales(p.name)}</span>
-                <span class="meta">${meta}</span>
+              <div class="autocomplete-item${i === hi ? ' highlighted' : ''}" data-id="${it.id}" data-out="${out ? 1 : 0}"${out ? ' style="opacity:.45;cursor:not-allowed;"' : ''}>
+                <span class="name">${escSales(it.name)}</span>
+                <span class="meta">${out ? 'Out of stock' : left + ' ' + escSales(it.unit) + ' in stock'}</span>
               </div>`;
             }).join('');
             list.querySelectorAll('.autocomplete-item').forEach(el => el.addEventListener('click', () => { if (el.dataset.out !== '1') pick(el.dataset.id); }));
@@ -844,41 +885,18 @@ function addMaterialRow() {
         list.classList.remove('hidden');
     };
 
-    const pick = async (id) => {
-        const p = PRODUCT_OPTIONS.find(x => x.id == id);
-        if (!p) return;
-        row._product = p;
-        row._variants = [];
-        input.value = p.name;
+    const pick = (id) => {
+        const it = SERVICE_STOCK.find(x => x.id == id);
+        if (!it) return;
+        row._item = it;
+        input.value = it.name;
         list.classList.add('hidden');
-        typeSel.innerHTML = '';
-        if (Number(p.variant_count) > 0) {
-            typeField.classList.remove('hidden');
-            typeSel.innerHTML = '<option value="">Loading descriptions...</option>';
-            if (!MATERIAL_VARIANT_CACHE[p.id]) {
-                const res = await API.get('product_variants.php', { product_id: p.id });
-                MATERIAL_VARIANT_CACHE[p.id] = res.success ? res.data.filter(v => v.status === 'active') : [];
-            }
-            row._variants = MATERIAL_VARIANT_CACHE[p.id];
-            typeSel.innerHTML = row._variants.length
-                ? '<option value="">Select a description...</option>' + row._variants.map(v => {
-                    const left = stockLeft(p.id, v.id, v.stock_quantity);
-                    return left > 0
-                        ? `<option value="${v.id}">${escSales(v.variant_name)} (${left} ${escSales(v.unit)} in stock)</option>`
-                        : `<option value="${v.id}" disabled>${escSales(v.variant_name)} (out of stock)</option>`;
-                }).join('')
-                : '<option value="">No active descriptions available</option>';
-        } else {
-            typeField.classList.add('hidden');
-        }
-        row.querySelector('.mat-hint').textContent = 'Quantity used per service';
+        hint.textContent = `Quantity used per service (${serviceStockLeft(it)} ${it.unit} in stock)`;
     };
 
     input.addEventListener('input', () => {
-        row._product = null;
-        row._variants = [];
-        typeField.classList.add('hidden');
-        typeSel.innerHTML = '';
+        row._item = null;
+        hint.textContent = 'Quantity used per service';
         show();
     });
     input.addEventListener('focus', show);
@@ -895,40 +913,26 @@ function addMaterialRow() {
     input.focus();
 }
 
-// Reads the "products used" rows. Returns [] when the answer is No.
+// Reads the "items used" rows. Returns [] when the answer is No.
 function collectMaterials() {
     if (!MATERIALS_USED) return [];
     const out = [];
     document.querySelectorAll('#s-materials-rows .material-row').forEach(row => {
         const text = row.querySelector('.mat-search').value.trim();
         if (!text) return;                                    // empty row, ignore
-        const p = row._product;
-        if (!p) throw new Error(`Pick "${text}" from the search list, or remove that row.`);
-        let variant = null;
-        if (Number(p.variant_count) > 0) {
-            const vId = row.querySelector('.mat-type').value;
-            variant = vId ? row._variants.find(v => v.id == vId) : null;
-            if (!variant) throw new Error(`Select a description for "${p.name}".`);
-        }
+        const it = row._item;
+        if (!it) throw new Error(`Pick "${text}" from the search list, or remove that row.`);
         const qty = parseInt(row.querySelector('.mat-qty').value, 10);
-        if (!qty || qty < 1) throw new Error(`Enter a quantity of 1 or more for "${p.name}".`);
-        out.push({
-            product_id: p.id,
-            variant_id: variant ? variant.id : null,
-            quantity: qty,
-            name: variant ? `${p.name} — ${variant.variant_name}` : p.name,
-        });
+        if (!qty || qty < 1) throw new Error(`Enter a quantity of 1 or more for "${it.name}".`);
+        out.push({ service_item_id: it.id, quantity: qty, name: it.name, unit: it.unit || '' });
     });
-    if (!out.length) throw new Error('Choose the product used, or tap "No".');
+    if (!out.length) throw new Error('Choose the item used, or tap "No".');
 
-    // The same product picked twice in one line counts once, with the quantities added up.
+    // The same item picked twice in one line counts once, with the quantities added up.
     const merged = [];
     out.forEach(m => {
-        const same = merged.find(x => x.product_id === m.product_id && x.variant_id === m.variant_id);
+        const same = merged.find(x => x.service_item_id === m.service_item_id);
         if (same) same.quantity += m.quantity; else merged.push(m);
     });
-    return merged.map(m => {
-        const p = PRODUCT_OPTIONS.find(x => x.id == m.product_id);
-        return { ...m, unit: p ? p.unit : '' };
-    });
+    return merged;
 }

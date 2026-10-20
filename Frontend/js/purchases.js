@@ -77,7 +77,7 @@ let RECENT_PURCHASES_CACHE = [];
 
 async function loadRecentPurchases() {
     const tbody = document.getElementById('recentPurchasesBody');
-    tbody.innerHTML = '<tr><td colspan="8" class="muted">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="muted">Loading...</td></tr>';
 
     const source = document.getElementById('sourceFilter').value;
     const period = document.getElementById('periodSelect').value;
@@ -92,12 +92,12 @@ async function loadRecentPurchases() {
         if (period === 'custom' && end) params.end = end;
     }
 
-    const titleMap = { '': 'Purchases', manual: 'Manual Purchases', import: 'Imported Purchases' };
+    const titleMap = { '': 'Product Purchases', manual: 'Manual Product Purchases', import: 'Imported Product Purchases' };
     document.getElementById('purchasesReportTitle').textContent = titleMap[source];
     document.getElementById('print-date-purchases').textContent = new Date().toLocaleString('en-GB');
 
     const res = await API.get('purchases.php', params);
-    if (!res.success) { tbody.innerHTML = `<tr><td colspan="8" class="muted">${res.message}</td></tr>`; return; }
+    if (!res.success) { tbody.innerHTML = `<tr><td colspan="10" class="muted">${res.message}</td></tr>`; return; }
 
     RECENT_PURCHASES_CACHE = res.data;
 
@@ -113,33 +113,85 @@ async function loadRecentPurchases() {
     document.getElementById('pu-total-types').textContent = distinctProducts.size;
     document.getElementById('pu-total-cost').textContent = money(totalCost);
 
-    if (!res.data.length) { tbody.innerHTML = '<tr><td colspan="8" class="muted">No purchases recorded yet.</td></tr>'; return; }
+    if (!res.data.length) { tbody.innerHTML = '<tr><td colspan="10" class="muted">No purchases recorded yet.</td></tr>'; return; }
 
-    // product_name/unit from the API already fold in the type name (e.g.
-    // "Pen — Obama Pen") so this table needs no other changes.
+    // The Product column shows the product's own name and the Description column its
+    // description (type), e.g. Product: Pen | Description: Obama Pen. (product_name still
+    // folds both together - it is used by the edit/delete prompts and the Excel export.)
     tbody.innerHTML = res.data.map(p => `
     <tr>
       <td>${fmtDate(p.purchase_date)}</td>
-      <td>${p.product_name}</td>
+      <td>${p.item_name !== undefined ? p.item_name : p.product_name}</td>
+      <td>${p.item_description ? escPurchaseText(p.item_description) : '—'}</td>
       <td>${p.unit}</td>
       <td>${p.quantity}</td>
-      <td>${money(p.buying_price)}</td>
-      <td><strong>${money(p.total_cost)}</strong></td>
+      <td class="admin-only">${money(p.buying_price)}</td>
+      <td class="admin-only"><strong>${money(p.total_cost)}</strong></td>
       <td>${p.source === 'import' ? '<span class="tag tag-gold">Imported</span>' : '<span class="tag tag-gray">Manual</span>'}</td>
       <td>${p.recorded_by_name}</td>
+      <td class="admin-only no-print">
+        <button class="icon-action-btn edit-btn" title="Edit purchase" onclick="openEditPurchase(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg></button>
+        <button class="icon-action-btn delete-btn" title="Delete purchase" onclick="deletePurchase(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg></button>
+      </td>
     </tr>`).join('');
+    applyRoleVisibility(); // hides Buying Price / Total Cost / Actions for workers
+}
+
+/* ========================================================================
+   Edit / Delete a recorded purchase (admin only - the server enforces it too)
+   Quantity changes and deletes move the product's stock to match.
+   ======================================================================== */
+function openEditPurchase(id) {
+    const p = RECENT_PURCHASES_CACHE.find(x => x.id == id);
+    if (!p) return;
+    document.getElementById('ep-id').value = p.id;
+    document.getElementById('ep-qty').value = p.quantity;
+    document.getElementById('ep-buying').value = p.buying_price;
+    document.getElementById('ep-date').value = p.purchase_date;
+    document.getElementById('ep-note').value = p.note || '';
+    document.getElementById('editPurchaseContext').textContent =
+        `${p.product_name} (${p.unit}) — recorded by ${p.recorded_by_name}. You can fix the quantity, price, date or note. To fix the wrong product, delete this purchase and record it again.`;
+    openModal('editPurchaseModal');
+}
+
+document.getElementById('editPurchaseForm').addEventListener('submit', async(e) => {
+    e.preventDefault();
+    const res = await API.put('purchases.php', {
+        id: document.getElementById('ep-id').value,
+        quantity: document.getElementById('ep-qty').value,
+        buying_price: document.getElementById('ep-buying').value,
+        purchase_date: document.getElementById('ep-date').value,
+        note: document.getElementById('ep-note').value.trim(),
+    });
+    if (!res.success) { toast(res.message, 'error'); return; }
+    toast(res.message);
+    closeModal('editPurchaseModal');
+    await loadProductsForMatching(); // stock counts shown in the add-purchase hints changed
+    loadRecentPurchases();
+});
+
+async function deletePurchase(id) {
+    const p = RECENT_PURCHASES_CACHE.find(x => x.id == id);
+    if (!p) return;
+    if (!confirm(`Delete this purchase of ${p.quantity} ${p.unit} of "${p.product_name}"?\n\n${p.quantity} will be taken out of stock.`)) return;
+    const res = await API.del('purchases.php', { id });
+    if (!res.success) { toast(res.message, 'error'); return; }
+    toast(res.message);
+    await loadProductsForMatching();
+    loadRecentPurchases();
 }
 
 function downloadPurchasesExcel() {
+    const isAdmin = CURRENT_USER && CURRENT_USER.role === 'admin';
     const rows = RECENT_PURCHASES_CACHE.map(p => [
-        p.purchase_date, p.product_name, p.unit, p.quantity, p.buying_price, p.total_cost,
+        p.purchase_date, p.product_name, p.unit, p.quantity, ...(isAdmin ? [p.buying_price, p.total_cost] : []),
         p.source === 'import' ? 'Imported' : 'Manual', p.recorded_by_name,
     ]);
     const source = document.getElementById('sourceFilter').value;
     const period = document.getElementById('periodSelect').value;
     let suffix = source ? '_' + source : '';
     if (period) suffix += '_' + period;
-    exportToExcel('eDESK_Purchases' + suffix + '_' + todayStr() + '.csv', ['Date', 'Product', 'Unit', 'Qty', 'Buying Price', 'Total Cost', 'Source', 'Recorded By'], rows);
+    exportToExcel('eDESK_Product_Purchases' + suffix + '_' + todayStr() + '.csv', ['Date', 'Product', 'Unit', 'Qty', ...(isAdmin ? ['Buying Price', 'Total Cost'] : []), 'Source', 'Recorded By'], rows);
 }
 
 /* ========================================================================
@@ -246,19 +298,26 @@ function updateMatchHint(name) {
     const hint = document.getElementById('sp-match-hint');
     const buyingHint = document.getElementById('sp-buying-hint');
     const sellingHint = document.getElementById('sp-selling-hint');
+    const minimumHint = document.getElementById('sp-minimum-hint');
+    const minDefault = 'Optional. The lowest price this item may be sold at. Leave blank to keep the current minimum price.';
 
     if (match) {
         hint.innerHTML = `<span class="tag tag-green">Existing product</span> Currently ${match.stock_quantity} ${match.unit} in stock. This purchase will add to that.`;
         buyingHint.textContent = `Leave blank to keep the current buying price (${money(match.buying_price)}).`;
         sellingHint.textContent = `Leave blank to keep the current selling price (${money(match.selling_price)}).`;
+        minimumHint.textContent = (match.minimum_price !== null && match.minimum_price !== undefined && match.minimum_price !== '')
+            ? `Optional. Leave blank to keep the current minimum price (${money(match.minimum_price)}).`
+            : 'Optional. No minimum price is set yet for this product. Leave blank to keep it that way.';
     } else if (name) {
         hint.innerHTML = '<span class="tag tag-gold">New</span> <button type="button" class="btn btn-outline btn-sm" onclick="quickAddSingleProduct()">+ Add to List</button>';
         buyingHint.textContent = 'Required for a new product.';
         sellingHint.textContent = 'Required for a new product.';
+        minimumHint.textContent = minDefault;
     } else {
         hint.textContent = '';
         buyingHint.textContent = 'Required for a new product. Leave blank on an existing product to keep its current price.';
         sellingHint.textContent = 'Required for a new product. Leave blank on an existing product to keep its current price.';
+        minimumHint.textContent = minDefault;
     }
 }
 
@@ -347,7 +406,7 @@ document.getElementById('quickAddForm').addEventListener('submit', async(e) => {
     if (QUICK_ADD_CALLBACK) {
         const cb = QUICK_ADD_CALLBACK;
         QUICK_ADD_CALLBACK = null;
-        cb();
+        await cb(res.data && res.data.id);
     }
 });
 
@@ -390,6 +449,13 @@ document.getElementById('singleForm').addEventListener('submit', async(e) => {
         return;
     }
 
+    const sellVal = document.getElementById('sp-selling').value;
+    const minVal = document.getElementById('sp-minimum').value;
+    if (minVal !== '' && sellVal !== '' && Number(minVal) > Number(sellVal)) {
+        showSingleValidation('The Minimum Selling Price cannot be higher than the Selling Price.');
+        return;
+    }
+
     clearSingleValidation();
     await submitSinglePurchase(name);
 });
@@ -402,6 +468,7 @@ async function submitSinglePurchase(name) {
         unit: document.getElementById('sp-unit').value.trim() || 'pcs',
         buying_price: document.getElementById('sp-buying').value,
         selling_price: document.getElementById('sp-selling').value,
+        minimum_price: document.getElementById('sp-minimum').value,
         category: document.getElementById('sp-category').value.trim(),
     };
 
@@ -430,19 +497,28 @@ let IMPORT_ROW_COUNT = 0;
 // filled-in example rows and an "Instructions" tab - so someone can grab
 // it, replace the examples with their real purchase list, and upload it
 // straight back into the box below.
-function downloadImportTemplate() {
+async function downloadImportTemplate() {
+    // Make sure the colour-capable Excel library is the one in use (see ui.js).
+    if (typeof loadXlsxStyle === 'function') await loadXlsxStyle();
     if (typeof XLSX === 'undefined') {
         toast('The file library could not load - check your internet connection and try again.', 'error');
         return;
     }
 
-    const headers = ['Product Name', 'Description', 'Unit', 'Quantity', 'Buying Price', 'Selling Price', 'Category'];
+    const headers = ['Product Name', 'Category', 'Description', 'Unit', 'Quantity', 'Buying Price', 'Selling Price'];
     const exampleRows = [
-        ['Rim Paper A4', '', 'pcs', 10, 15000, 18000, 'Paper'],
-        ['Pen', 'Obama Pen', 'pcs', 24, 300, 500, 'Stationery'],
+        ['Rim Paper A4', 'Paper', '', 'pcs', 10, 15000, 18000],
+        ['Pen', 'Stationery', 'Obama Pen', 'pcs', 24, 300, 500],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...exampleRows]);
-    sheet['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }];
+    sheet['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+
+    // Amber header row (same look for the Purchases template and the
+    // Dashboard low stock Excel). Needs the xlsx-js-style build of SheetJS.
+    headers.forEach((_, c) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
+        if (cell) cell.s = { fill: { patternType: 'solid', fgColor: { rgb: 'FFC000' } }, font: { color: { rgb: '000000' } } };
+    });
 
     const instructions = XLSX.utils.aoa_to_sheet([
         ['How to use this template'],
@@ -491,7 +567,28 @@ function handleFileSelected(e) {
             const data = new Uint8Array(evt.target.result);
             const wb = XLSX.read(data, { type: 'array' });
             const sheet = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+            let json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+            // Damaged headings (for example "Product Name" copied across several
+            // columns, so Quantity / Buying Price headings are gone): read the
+            // columns in the template's own order instead of by heading.
+            let headingsFixed = false;
+            if (json.length) {
+                const probe = json[0];
+                const nameLikeCount = Object.keys(probe).filter(k => /product|name|item/i.test(k)).length;
+                if (nameLikeCount >= 2 && !findColumn(probe, ['qty', 'quantity']) && !findColumn(probe, ['buy', 'cost'])) {
+                    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                    if (raw.length > 1 && raw[0].length >= 6) {
+                        const ORDER = ['Product Name', 'Category', 'Description', 'Unit', 'Quantity', 'Buying Price', 'Selling Price'];
+                        json = raw.slice(1).map(cells => {
+                            const o = {};
+                            ORDER.forEach((h, i) => { o[h] = cells[i] === undefined ? '' : cells[i]; });
+                            return o;
+                        });
+                        headingsFixed = true;
+                    }
+                }
+            }
 
             if (!json.length) {
                 statusEl.innerHTML = '<div class="msg error-box show">The file appears to be empty.</div>';
@@ -500,7 +597,7 @@ function handleFileSelected(e) {
 
             const parsedRows = json.map(row => {
                 const nameKey = findColumn(row, ['product', 'name', 'item']);
-                const typeKey = findColumn(row, ['description', 'type', 'variant']);
+                const typeKey = findColumn(row, ['desc', 'type', 'variant']); // 'desc' also catches typos like "Descripton"
                 const qtyKey = findColumn(row, ['qty', 'quantity']);
                 const buyKey = findColumn(row, ['buy', 'cost']);
                 const sellKey = findColumn(row, ['sell', 'retail']);
@@ -525,7 +622,8 @@ function handleFileSelected(e) {
             if (!parsedRows.length) {
                 statusEl.innerHTML = '<div class="msg error-box show">Couldn\'t find any product rows in that file. Check the Review table appears - you can also add rows manually.</div>';
             } else {
-                statusEl.innerHTML = `<p class="help-text mt-8">Found ${parsedRows.length} row(s). Review and complete the missing prices below, then confirm.</p>`;
+                statusEl.innerHTML = `<p class="help-text mt-8">Found ${parsedRows.length} row(s). Review and complete the missing prices below, then confirm.</p>` +
+                    (headingsFixed ? '<p class="help-text warn" style="margin-top:4px;">The column headings in this file were not recognised, so the columns were read in the template order (Product Name, Category, Description, Unit, Quantity, Buying Price, Selling Price). Please check the table below.</p>' : '');
             }
 
             renderImportPreview(parsedRows);
@@ -556,12 +654,12 @@ function addImportRow(r) {
     tr.dataset.rowId = idx;
     tr.innerHTML = `
     <td><input type="text" class="imp-name" value="${escapeAttr(r.name)}" style="min-width:150px;"></td>
+    <td><input type="text" class="imp-category" value="${escapeAttr(r.category)}" style="width:110px;"></td>
     <td><input type="text" class="imp-type" value="${escapeAttr(r.variant_name)}" placeholder="only if it has types" style="min-width:130px;"></td>
     <td><input type="text" class="imp-unit" value="${escapeAttr(r.unit || 'pcs')}" style="width:70px;"></td>
     <td><input type="number" class="imp-qty" min="0" step="1" value="${escapeAttr(r.quantity)}" style="width:80px;"></td>
     <td><input type="number" class="imp-buying" min="0" step="0.01" value="${escapeAttr(r.buying_price)}" style="width:100px;"></td>
     <td><input type="number" class="imp-selling" min="0" step="0.01" value="${escapeAttr(r.selling_price)}" style="width:100px;"></td>
-    <td><input type="text" class="imp-category" value="${escapeAttr(r.category)}" style="width:110px;"></td>
     <td class="imp-status"></td>
     <td><button type="button" class="icon-action-btn delete-btn" title="Remove row" onclick="this.closest('tr').remove()"><svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg></button></td>
   `;
@@ -625,11 +723,60 @@ function quickAddImportRow(btn) {
     const unit = tr.querySelector('.imp-unit').value.trim() || 'pcs';
     if (!name) return;
 
-    openQuickAddModal(name, category, unit, () => updateImportRowStatus(tr));
+    openQuickAddModal(name, category, unit, async (productId) => {
+        // Add this product's descriptions (types) from EVERY row that has the same
+        // name, so all similar rows go to the Product List together with their descriptions.
+        const added = await addTypesForImportRows(name, productId);
+        if (added > 0) {
+            toast(added + ' description' + (added === 1 ? '' : 's') + ' added under ' + name + '.');
+            await loadProductsForMatching(); // product now has types - reload so row checks are correct
+        }
+        refreshAllImportRows();
+    });
+}
+
+/**
+ * Creates one type (description) under the product for each different
+ * description found in the import rows that share the product's name.
+ * Rows with a blank description are left alone (plain product).
+ */
+async function addTypesForImportRows(name, productId) {
+    if (!productId) return 0;
+    const key = name.trim().toLowerCase();
+    const seen = {};
+    let added = 0;
+    const rows = Array.from(document.querySelectorAll('#importPreviewBody tr'));
+    for (const row of rows) {
+        if (row.querySelector('.imp-name').value.trim().toLowerCase() !== key) continue;
+        const typeName = row.querySelector('.imp-type').value.trim();
+        if (!typeName || seen[typeName.toLowerCase()]) continue;
+        seen[typeName.toLowerCase()] = true;
+
+        const res = await API.post('product_variants.php', {
+            product_id: productId,
+            variant_name: typeName,
+            unit: row.querySelector('.imp-unit').value.trim() || 'pcs',
+            buying_price: row.querySelector('.imp-buying').value || 0,
+            selling_price: row.querySelector('.imp-selling').value || 0,
+        });
+        if (res.success) added++;
+    }
+    return added;
+}
+
+// Re-check every row in the review table (name / type status + the red "add product first" note)
+function refreshAllImportRows() {
+    document.querySelectorAll('#importPreviewBody tr').forEach(r => updateImportRowStatus(r));
 }
 
 function escapeAttr(v) {
     return String(v === null || v === undefined ? '' : v).replace(/"/g, '&quot;');
+}
+
+// Escapes text for safe display inside table cells.
+function escPurchaseText(v) {
+    return String(v === null || v === undefined ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**

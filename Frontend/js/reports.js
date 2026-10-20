@@ -4,7 +4,7 @@
 let LAST_REPORT = null;
 
 (async function init() {
-  await requireAuth();
+  if (!(await requireAuth(['admin']))) return; // Reports hold profit figures - workers are sent back to the dashboard
   document.getElementById('dateInput').value = new Date().toISOString().slice(0, 10);
   document.getElementById('periodSelect').addEventListener('change', onPeriodChange);
   onPeriodChange();
@@ -148,8 +148,9 @@ function downloadReportExcel() {
     ...expandRanked(r.most_profitable),
     [],
     ['EXPENSE BREAKDOWN'],
-    ['Category', 'Amount'],
-    ...r.expense_breakdown.map(e => [e.category, e.total]),
+    ['Title', 'Category', 'Amount', 'Date', 'Note'],
+    // Note column: filled only when a note was written, otherwise left blank.
+    ...(r.expense_list || []).map(e => [e.title, e.category, e.amount, e.expense_date, (e.note && String(e.note).trim()) ? e.note : '']),
     [],
     ['DAMAGES / WASTED STOCK'],
     ['Product', 'Qty', 'Reason', 'Loss Value', 'Date'],

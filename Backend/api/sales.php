@@ -5,6 +5,7 @@ require_once __DIR__ . '/../helpers/audit_helper.php';
 require_once __DIR__ . '/../helpers/customer_helper.php';
 require_once __DIR__ . '/../helpers/change_helper.php';
 require_once __DIR__ . '/../helpers/service_material_helper.php';
+require_once __DIR__ . '/../helpers/access_helper.php';
 
 $user = require_role(['admin', 'worker']);
 $pdo = get_db();
@@ -34,19 +35,23 @@ function prepare_sale_item(PDO $pdo, array $raw): array
     // A product with types cannot be sold as itself - a specific type
     // must be selected, and that type's own price/stock are used
     // instead of the parent product's.
+    // Services have descriptions too (e.g. "Printing" -> "A4"), so the selected one is
+    // looked up and saved for services exactly like it is for products. Only stock and
+    // buying price differ (handled below), not the description.
     $variant = null;
-    if (!$product['is_service']) {
-        $countStmt = $pdo->prepare('SELECT COUNT(*) FROM product_variants WHERE product_id = ?');
-        $countStmt->execute([$productId]);
-        $hasVariants = (int)$countStmt->fetchColumn() > 0;
+    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM product_variants WHERE product_id = ?');
+    $countStmt->execute([$productId]);
+    $hasVariants = (int)$countStmt->fetchColumn() > 0;
 
-        if ($hasVariants) {
-            if (!$variantId) respond(false, null, 'Please select a type for "' . $product['name'] . '".', 422);
-            $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?');
-            $vStmt->execute([$variantId, $productId]);
-            $variant = $vStmt->fetch();
-            if (!$variant) respond(false, null, 'That type of "' . $product['name'] . '" no longer exists.', 404);
-        }
+    // Old service sales were saved with no description. Editing one of them must still work,
+    // so a missing description is only refused for products (the sales screen itself always
+    // makes the user pick a description for new service lines).
+    if ($hasVariants && ($variantId || !$product['is_service'])) {
+        if (!$variantId) respond(false, null, 'Please select a type for "' . $product['name'] . '".', 422);
+        $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?');
+        $vStmt->execute([$variantId, $productId]);
+        $variant = $vStmt->fetch();
+        if (!$variant) respond(false, null, 'That description of "' . $product['name'] . '" no longer exists.', 404);
     }
 
     $label = $variant ? ($product['name'] . ' — ' . $variant['variant_name']) : $product['name'];
@@ -63,15 +68,16 @@ function prepare_sale_item(PDO $pdo, array $raw): array
     }
 
     // The sale amount is ALWAYS the full price charged: quantity x unit price.
-    // Products used to provide a service never reduce it - they only reduce PROFIT
-    // (and come out of stock when the sale is saved).
+    // Products used to provide a service only come out of STOCK (when the sale is saved).
+    // Their buying price is NOT deducted from the service profit: a service's profit is its
+    // full selling price, exactly like a service that uses no products.
     $subtotal = round($qty * $unitPrice, 2);
     $materials = [];
     if ($product['is_service']) {
         $line = sm_build_line_materials($pdo, is_array($raw['materials'] ?? null) ? $raw['materials'] : [], $qty);
         $materials = $line['materials'];
-        $buyingPrice = $line['unit_cost'];                 // cost of the products used, per 1 service
-        $profit = round($subtotal - $line['total_cost'], 2);
+        $buyingPrice = 0.0;                                // services carry no buying price
+        $profit = $subtotal;                               // full selling price stays as profit
     } else {
         $profit = round(($unitPrice - $buyingPrice) * $qty, 2);
     }
@@ -117,6 +123,10 @@ if ($method === 'GET') {
         }
 
         $txn['items'] = sm_materials_for_sale_items($pdo, $txn['items']);
+        if (!is_admin_user($user)) {
+            $txn = hide_fields($txn, ['total_profit']);
+            $txn['items'] = hide_fields_in_rows($txn['items'], ['buying_price', 'profit']);
+        }
         respond(true, $txn);
     }
 
@@ -145,6 +155,33 @@ if ($method === 'GET') {
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
     if ($changeSelect !== '') $rows = array_map('decorate_sale_change', $rows);
+
+    // item_lines: every item of each sale as {name, description}, in the order it was sold -
+    // lets the Sales History table show the Items and Descriptions columns separately.
+    // One query for the whole list (item_names above is left as it was for other users of it).
+    if ($rows) {
+        $saleIds = array_map(fn($r) => (int)$r['id'], $rows);
+        $linesStmt = $pdo->prepare('SELECT si.transaction_id, p.name AS item_name, pv.variant_name AS item_description
+                                    FROM sale_items si
+                                    JOIN products p ON p.id = si.product_id
+                                    LEFT JOIN product_variants pv ON pv.id = si.variant_id
+                                    WHERE si.transaction_id IN (' . implode(',', array_fill(0, count($saleIds), '?')) . ')
+                                    ORDER BY si.id ASC');
+        $linesStmt->execute($saleIds);
+        $linesBySale = [];
+        foreach ($linesStmt->fetchAll() as $l) {
+            $linesBySale[(int)$l['transaction_id']][] = [
+                'name' => $l['item_name'],
+                'description' => $l['item_description'] === null ? '' : $l['item_description'],
+            ];
+        }
+        foreach ($rows as &$saleRow) {
+            $saleRow['item_lines'] = $linesBySale[(int)$saleRow['id']] ?? [];
+        }
+        unset($saleRow);
+    }
+
+    if (!is_admin_user($user)) $rows = hide_fields_in_rows($rows, ['total_profit']);
     respond(true, $rows);
 }
 
@@ -314,7 +351,8 @@ if ($method === 'POST') {
         . ($customerName !== '' ? ' to ' . $customerName : '')
         . ($changeAmount > 0 ? ', customer left TZS ' . number_format($changeAmount) . ' change' : ''));
 
-    respond(true, ['id' => $txnId, 'total_amount' => $totalAmount, 'profit' => $totalProfit, 'change_amount' => $changeAmount], 'Sale recorded successfully.');
+    $created = ['id' => $txnId, 'total_amount' => $totalAmount, 'profit' => $totalProfit, 'change_amount' => $changeAmount];
+    respond(true, is_admin_user($user) ? $created : hide_fields($created, ['profit']), 'Sale recorded successfully.');
 }
 
 if ($method === 'PUT') {
@@ -456,7 +494,8 @@ if ($method === 'PUT') {
         respond(false, null, 'Could not update sale: ' . $e->getMessage(), 500);
     }
 
-    respond(true, ['total_amount' => $totalAmount, 'profit' => $totalProfit], 'Sale updated successfully.');
+    $updated = ['total_amount' => $totalAmount, 'profit' => $totalProfit];
+    respond(true, is_admin_user($user) ? $updated : hide_fields($updated, ['profit']), 'Sale updated successfully.');
 }
 
 if ($method === 'DELETE') {

@@ -519,6 +519,7 @@ tbody tr:hover{background:#FAFBFE;}
 
   .no-print{display:none !important;}
   .print-only{display:block !important;}
+  .admin-only.hidden{display:none !important;} /* hidden-for-workers items must not appear in print either */
   body{background:#fff;margin:0;}
   .main-content{padding:4mm 12mm 14mm;max-width:100%;}
   .card{box-shadow:none;}
@@ -549,3 +550,449 @@ tbody tr:hover{background:#FAFBFE;}
   .modal-overlay{align-items:flex-start;padding-top:28px;padding-bottom:28px;}
   .modal{max-height:calc(100dvh - 56px);}
 }
+
+
+/* =====================================================================
+   ANIMATIONS (system-wide)
+   - Everything here is cosmetic and respects "reduce motion" settings.
+   - Entrance animations use fill-mode "backwards" so no leftover
+     transform stays on an element afterwards (keeps fixed/absolute
+     children such as dropdowns and modals working normally).
+   ===================================================================== */
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:none;}}
+@keyframes fadeDown{from{opacity:0;transform:translateY(-100%);}to{opacity:1;transform:none;}}
+@keyframes popIn{from{opacity:0;transform:translateY(14px) scale(.96);}to{opacity:1;transform:none;}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes spinReverse{to{transform:rotate(-360deg);}}
+@keyframes floatY{0%,100%{transform:translate(-50%,-50%);}50%{transform:translate(-50%,calc(-50% - 9px));}}
+@keyframes glowDrift{0%,100%{transform:translate(0,0) scale(1);opacity:.9;}50%{transform:translate(-40px,30px) scale(1.18);opacity:1;}}
+@keyframes glowDriftAlt{0%,100%{transform:translate(0,0) scale(1);opacity:.7;}50%{transform:translate(50px,-30px) scale(1.12);opacity:1;}}
+@keyframes ringGlow{0%,100%{box-shadow:0 0 0 0 rgba(240,184,73,.0),inset 0 0 22px rgba(240,184,73,.05);}50%{box-shadow:0 0 34px 2px rgba(240,184,73,.18),inset 0 0 30px rgba(240,184,73,.10);}}
+@keyframes btnPulse{0%{box-shadow:0 0 0 0 rgba(240,184,73,.55);}70%{box-shadow:0 0 0 14px rgba(240,184,73,0);}100%{box-shadow:0 0 0 0 rgba(240,184,73,0);}}
+@keyframes shine{0%{transform:translateX(-120%) skewX(-20deg);}60%,100%{transform:translateX(220%) skewX(-20deg);}}
+
+/* ---- Page load ---- */
+body{animation:fadeIn .45s ease;}
+.topbar{animation:fadeDown .45s cubic-bezier(.2,.7,.2,1) backwards;}
+.sidebar .nav-link{animation:fadeIn .5s ease backwards;}
+
+/* Main content blocks rise in one after another */
+.main-content > *:not(.modal-overlay):not(.print-header){animation:fadeUp .5s cubic-bezier(.2,.7,.2,1) backwards;}
+.main-content > *:nth-child(2){animation-delay:.05s;}
+.main-content > *:nth-child(3){animation-delay:.10s;}
+.main-content > *:nth-child(4){animation-delay:.15s;}
+.main-content > *:nth-child(5){animation-delay:.20s;}
+.main-content > *:nth-child(6){animation-delay:.25s;}
+.main-content > *:nth-child(n+7){animation-delay:.30s;}
+
+/* Stat cards pop in with a stagger */
+.stat-grid > *{animation:popIn .55s cubic-bezier(.2,.7,.2,1) backwards;}
+.stat-grid > *:nth-child(1){animation-delay:.10s;}
+.stat-grid > *:nth-child(2){animation-delay:.17s;}
+.stat-grid > *:nth-child(3){animation-delay:.24s;}
+.stat-grid > *:nth-child(4){animation-delay:.31s;}
+.stat-grid > *:nth-child(5){animation-delay:.38s;}
+.stat-grid > *:nth-child(n+6){animation-delay:.45s;}
+.stat-card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
+.stat-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:#EBD7AE;}
+.stat-card .icon{transition:transform .3s ease;}
+.stat-card:hover .icon{transform:scale(1.12) rotate(-6deg);}
+
+/* Table rows fade in (also fires for rows rendered later by JS) */
+tbody tr{animation:fadeIn .35s ease backwards;transition:background .15s ease;}
+tbody tr:nth-child(2){animation-delay:.03s;} tbody tr:nth-child(3){animation-delay:.06s;}
+tbody tr:nth-child(4){animation-delay:.09s;} tbody tr:nth-child(5){animation-delay:.12s;}
+tbody tr:nth-child(6){animation-delay:.15s;} tbody tr:nth-child(7){animation-delay:.18s;}
+tbody tr:nth-child(8){animation-delay:.21s;} tbody tr:nth-child(n+9){animation-delay:.24s;}
+
+/* Buttons: smooth lift on hover, press on click */
+.btn{transition:background .18s ease,color .18s ease,border-color .18s ease,transform .18s ease,box-shadow .18s ease;}
+.btn:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(16,27,48,.14);}
+.btn:not(:disabled):active{transform:translateY(0) scale(.97);box-shadow:none;}
+.btn-primary:not(:disabled):hover{box-shadow:0 8px 18px rgba(240,184,73,.4);}
+
+/* Sidebar links slide slightly on hover */
+.nav-link{transition:background .18s ease,color .18s ease,transform .18s ease;}
+.nav-link:not(.active):hover{transform:translateX(4px);}
+.nav-link .ic{transition:transform .2s ease;}
+.nav-link:hover .ic{transform:scale(1.15);}
+
+/* Modals: dimmed backdrop fades, dialog pops in */
+.modal-overlay.open{animation:fadeIn .2s ease;}
+.modal-overlay.open .modal{animation:popIn .28s cubic-bezier(.2,.8,.2,1);}
+.modal-close{transition:transform .2s ease,color .2s ease;}
+.modal-close:hover{transform:rotate(90deg);color:var(--red);}
+
+/* Inputs glow gently on focus */
+.field input,.field select,.field textarea{transition:border-color .18s ease,box-shadow .18s ease,background .18s ease;}
+.field input:focus,.field select:focus,.field textarea:focus{box-shadow:0 0 0 3px rgba(240,184,73,.22);}
+
+/* Dropdowns / autocomplete */
+.autocomplete-list,.download-menu{animation:popIn .18s ease;}
+
+/* Login / forgot-password */
+.auth-wrap::before{animation:glowDrift 12s ease-in-out infinite;}
+.auth-card{animation:popIn .6s cubic-bezier(.2,.8,.2,1) backwards;}
+.auth-brand img{animation:fadeIn .9s ease .15s backwards;}
+.auth-card .field,.auth-card .btn{animation:fadeUp .5s ease backwards;}
+.auth-card .field:nth-of-type(1){animation-delay:.25s;}
+.auth-card .field:nth-of-type(2){animation-delay:.32s;}
+.auth-card .btn{animation-delay:.40s;}
+.error-box.show{animation:popIn .25s ease;}
+
+/* ---------------------------------------------------------------------
+   LANDING PAGE
+   --------------------------------------------------------------------- */
+.landing-nav{animation:fadeDown .6s cubic-bezier(.2,.7,.2,1) backwards;}
+.landing-nav .brand img{transition:transform .4s ease;}
+.landing-nav .brand:hover img{transform:scale(1.08) rotate(-3deg);}
+
+/* Hero background glows drift slowly */
+.hero::before{animation:glowDrift 11s ease-in-out infinite;}
+.hero::after{
+  content:'';position:absolute;width:420px;height:420px;border-radius:50%;
+  background:radial-gradient(circle,rgba(240,184,73,.11),transparent 70%);
+  bottom:-200px;left:-120px;animation:glowDriftAlt 14s ease-in-out infinite;pointer-events:none;
+}
+.hero .container{position:relative;z-index:1;}
+
+/* Entrance helper: add class "anim-up" and optionally style="--d:.3s" */
+.anim-up{animation:fadeUp .8s cubic-bezier(.2,.7,.2,1) backwards;animation-delay:var(--d,0s);}
+
+/* ---- Logo inside a rotating ring ---- */
+.logo-ring{
+  --ring: clamp(200px, 23vw, 262px);
+  position:relative;width:var(--ring);height:var(--ring);margin:0 auto 6px;
+  animation:fadeIn 1s ease .1s backwards;
+  transform:translate(calc(var(--mx,0) * 12px),calc(var(--my,0) * 10px));transition:transform .25s ease-out;
+}
+.logo-ring .ring{position:absolute;border-radius:50%;pointer-events:none;}
+
+/* faint static track + breathing glow */
+.logo-ring .ring-track{
+  inset:3%;border:1px solid rgba(240,184,73,.20);
+  animation:ringGlow 4.5s ease-in-out infinite;
+}
+/* bright comet arc that spins (the head of the arc carries a glowing dot) */
+.logo-ring .ring-spin{
+  inset:3%;
+  background:conic-gradient(from 0deg, rgba(240,184,73,0) 0deg, rgba(240,184,73,0) 150deg, rgba(240,184,73,.95) 360deg);
+  -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+          mask:radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  animation:spin 5s linear infinite;
+}
+/* orbiting dot (sits outside the mask so it is never clipped) */
+.logo-ring .ring-orbit{inset:3%;animation:spin 5s linear infinite;}
+.logo-ring .ring-orbit::after{
+  content:'';position:absolute;top:-5px;left:50%;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;
+  background:#FFE29A;box-shadow:0 0 12px 4px rgba(240,184,73,.85);
+}
+/* thin dashed counter-rotating inner ring */
+.logo-ring .ring-dash{
+  inset:9%;border:1.5px dashed rgba(240,184,73,.38);
+  animation:spinReverse 28s linear infinite;
+}
+
+/* the logo itself stays upright and gently floats in the middle */
+.logo-ring .hero-logo{
+  position:absolute;left:50%;top:50%;width:112%;max-width:none;height:auto;margin:0;
+  transform:translate(-50%,-50%);animation:floatY 6s ease-in-out infinite;
+}
+
+/* CTA button pulse */
+.btn-pulse{position:relative;overflow:hidden;animation:btnPulse 2.2s ease-out infinite;}
+.btn-pulse::after{
+  /* shine sweep */
+  content:'';position:absolute;top:0;left:0;width:40%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  animation:shine 3.4s ease-in-out infinite;pointer-events:none;
+}
+
+/* Scroll reveal (only active when JS has added the "js" class to <html>) */
+.js .reveal{
+  opacity:0;transform:translateY(28px);
+  transition:opacity .7s ease var(--rd,0s),transform .7s cubic-bezier(.2,.7,.2,1) var(--rd,0s),
+             box-shadow .25s ease,border-color .25s ease;
+}
+.js .reveal.in{opacity:1;transform:none;}
+.js .reveal.done{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease,opacity .25s ease;}
+
+.feature{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease;}
+.feature:hover{transform:translateY(-6px);box-shadow:var(--shadow-lg);border-color:#EBD7AE;}
+.js .feature.reveal.in.done:hover{transform:translateY(-6px);}
+.feature .fi{transition:transform .35s ease,background .25s ease,color .25s ease;}
+.feature:hover .fi{transform:rotate(-8deg) scale(1.15);background:var(--gold);color:var(--navy);}
+.feature:hover .fi .ui-icon{color:var(--navy);}
+.landing-footer{animation:fadeIn 1s ease;}
+
+/* ---- Respect users who prefer less motion ---- */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;animation-iteration-count:1 !important;
+    animation-delay:0s !important;transition-duration:.001ms !important;scroll-behavior:auto !important;
+  }
+  .js .reveal{opacity:1;transform:none;}
+}
+
+/* ---- Never animate when printing ---- */
+@media print{
+  *,*::before,*::after{animation:none !important;transition:none !important;}
+  .js .reveal{opacity:1 !important;transform:none !important;}
+}
+
+
+/* =====================================================================
+   LANDING PAGE - EXTRA MOTION
+   ===================================================================== */
+@keyframes riseUp{0%{transform:translateY(0) scale(.6);opacity:0;}15%{opacity:.9;}85%{opacity:.5;}100%{transform:translateY(-460px) scale(1.2);opacity:0;}}
+@keyframes tickerMove{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+@keyframes textShimmer{to{background-position:200% center;}}
+@keyframes iconBob{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
+@keyframes underlineGrow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+
+/* scroll progress bar */
+.scroll-progress{
+  position:fixed;top:0;left:0;right:0;height:3px;z-index:60;pointer-events:none;
+  background:linear-gradient(90deg,var(--navy),var(--gold),#FFE29A);
+  transform-origin:0 50%;transform:scaleX(0);
+}
+
+/* floating gold particles in the hero */
+.particles{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0;}
+.particles span{
+  position:absolute;bottom:-12px;left:var(--x,50%);width:var(--s,6px);height:var(--s,6px);border-radius:50%;
+  background:rgba(240,184,73,.75);box-shadow:0 0 10px rgba(240,184,73,.6);opacity:0;
+  animation:riseUp var(--t,9s) ease-in infinite;animation-delay:var(--dl,0s);
+}
+
+/* shimmering tagline */
+.shimmer-text{
+  background:linear-gradient(90deg,#fff 0%,#fff 35%,var(--gold) 50%,#fff 65%,#fff 100%);
+  background-size:200% auto;-webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;color:transparent;
+  animation:textShimmer 4s linear infinite;font-weight:700;letter-spacing:.6px;
+}
+
+/* scrolling keyword strip under the hero */
+.ticker{background:var(--navy-2);border-top:1px solid #223055;border-bottom:1px solid #223055;overflow:hidden;padding:11px 0;}
+.ticker-track{display:flex;width:max-content;animation:tickerMove 26s linear infinite;}
+.ticker:hover .ticker-track{animation-play-state:paused;}
+.ticker-track span{
+  color:var(--gold);font-size:11.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
+  padding:0 22px;white-space:nowrap;display:inline-flex;align-items:center;gap:44px;
+}
+.ticker-track span::after{content:'';width:6px;height:6px;background:var(--gold);transform:rotate(45deg);opacity:.7;}
+
+/* section heading: animated underline */
+.section-head .eyebrow{position:relative;display:inline-block;padding-bottom:5px;}
+.section-head .eyebrow::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--gold);
+  transform-origin:left;transform:scaleX(0);
+}
+.section-head.in .eyebrow::after{animation:underlineGrow .8s ease .4s forwards;}
+
+/* feature cards: different entrance directions + floating icons */
+.js .feature.reveal:nth-child(3n+1){transform:translate(-34px,22px);}
+.js .feature.reveal:nth-child(3n+3){transform:translate(34px,22px);}
+.js .feature.reveal:nth-child(3n+2){transform:translateY(40px) scale(.94);}
+.js .feature.reveal.in{transform:none;}
+.feature .fi{animation:iconBob 3.2s ease-in-out infinite;}
+.feature:nth-child(2) .fi{animation-delay:.3s;} .feature:nth-child(3) .fi{animation-delay:.6s;}
+.feature:nth-child(4) .fi{animation-delay:.9s;} .feature:nth-child(5) .fi{animation-delay:1.2s;}
+.feature:nth-child(6) .fi{animation-delay:1.5s;}
+.feature{position:relative;overflow:hidden;}
+.feature::before{
+  content:'';position:absolute;left:0;top:0;height:3px;width:100%;background:linear-gradient(90deg,var(--gold),#FFE29A);
+  transform:scaleX(0);transform-origin:left;transition:transform .4s ease;
+}
+.feature:hover::before{transform:scaleX(1);}
+
+@media (prefers-reduced-motion: reduce){
+  .particles,.ticker-track{animation:none !important;}
+  .logo-ring{transform:none !important;}
+}
+@media print{.particles,.scroll-progress,.ticker{display:none !important;}}
+
+
+/* =====================================================================
+   RESPONSIVE & POLISH LAYER
+   Phones  •  Tablets  •  Laptops  •  Large monitors
+   Screen-only, so printed reports / PDFs are not affected.
+   ===================================================================== */
+@media print{.bottom-nav{display:none !important;}}
+
+@media screen{
+
+  html{-webkit-text-size-adjust:100%;}
+  :root{--pad:clamp(12px,2.2vw,28px);}
+
+  /* ---------- Shared polish ---------- */
+  :where(a,button,input,select,textarea,[tabindex]):focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  table td,.stat-card .value,.today-row .v,.rt-item strong{font-variant-numeric:tabular-nums;}
+  .main-content{padding:var(--pad);}
+  .topbar{
+    background:rgba(255,255,255,.9);
+    -webkit-backdrop-filter:saturate(1.4) blur(10px);backdrop-filter:saturate(1.4) blur(10px);
+    gap:10px;
+  }
+  .topbar > div{min-width:0;}
+  .topbar .page-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sidebar{scrollbar-width:thin;scrollbar-color:#2A3A63 transparent;}
+  .table-wrap{-webkit-overflow-scrolling:touch;}
+  .btn{border-radius:10px;}
+
+  /* ---------- Bottom navigation (built by js/ui.js, phones/tablets only) ---------- */
+  .bottom-nav{display:none;}
+
+  /* ---------- Large screens ---------- */
+  @media (min-width:1280px){
+    .sidebar{width:240px;}
+    .main{margin-left:240px;}
+    .main-content{max-width:1360px;}
+    .nav-link{padding:10px 12px;font-size:13.5px;}
+    .stat-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
+    .feature-grid{max-width:1100px;}
+  }
+  @media (min-width:1700px){
+    .main-content{max-width:1560px;margin:0 auto;}
+    body{font-size:15px;}
+    table{font-size:13.5px;}
+  }
+
+  /* ---------- Small laptops / tablets landscape ---------- */
+  @media (max-width:1024px){
+    .dashboard-grid{grid-template-columns:1fr;}
+  }
+
+  /* ---------- Tablets & phones: sidebar becomes a slide-in drawer ---------- */
+  @media (max-width:880px){
+    .sidebar{width:min(290px,86vw);left:-310px;}
+    .sidebar.open{left:0;}
+    .main-content{max-width:100%;}
+    .topbar{padding:0 14px;}
+
+    .bottom-nav{
+      display:grid;grid-template-columns:repeat(5,1fr);gap:2px;
+      position:fixed;left:0;right:0;bottom:0;z-index:50;
+      background:#fff;border-top:1px solid var(--line);
+      box-shadow:0 -6px 22px rgba(16,27,48,.08);
+      padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));
+    }
+    .bottom-nav a,.bottom-nav button{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+      min-height:50px;padding:6px 2px;border:none;border-radius:12px;background:none;
+      font-size:10.5px;font-weight:600;color:var(--muted);font-family:inherit;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .bottom-nav .ui-icon{width:20px;height:20px;margin:0;vertical-align:0;}
+    .bottom-nav .active{background:#FDF3E3;color:var(--navy);}
+    .bottom-nav .active .ui-icon{color:var(--gold-dim);}
+    body.has-bottom-nav{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px));}
+  }
+
+  /* ---------- Phones ---------- */
+  @media (max-width:640px){
+    body{font-size:14.5px;}
+
+    /* Top bar: title + actions may wrap to a second row instead of overflowing */
+    .topbar{height:auto;min-height:56px;flex-wrap:wrap;padding:8px 12px;row-gap:8px;}
+    .topbar{gap:8px;}
+    .topbar > div:first-child{flex:1 1 calc(100% - 96px);min-width:0;}
+    /* Account chip stays beside the title; action buttons share the row below */
+    .topbar > div:last-child{display:contents;}
+    .topbar > div:last-child > .user-menu,.topbar > div:last-child > .topbar-logout{order:1;}
+    .topbar > div:last-child > :not(.user-menu):not(.topbar-logout){order:2;flex:1 1 auto;}
+
+    .card{padding:14px;}
+    .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .stat-card{padding:12px;}
+    .stat-card .label{padding-right:28px;}
+    .stat-card .value{font-size:clamp(15px,4.8vw,19px);word-break:break-word;}
+    .stat-card .icon{width:26px;height:26px;right:8px;top:8px;}
+
+    .report-summary{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .report-totals-row .rt-item{min-width:calc(50% - 10px);}
+    .filter-bar .field,.filter-bar .btn{flex:1 1 calc(50% - 10px);min-width:130px;}
+    .filter-bar .field{margin-bottom:0;}
+
+    /* Inputs: 16px stops iOS from zooming the page when a field is tapped */
+    input,select,textarea,.field input,.field select,.field textarea{font-size:16px;}
+    .field input,.field select{min-height:44px;}
+    .field-row{gap:0;}
+
+    /* Modals open from the top of the screen (same as the description forms) */
+    .modal-overlay{align-items:flex-start;padding:20px 12px;}
+    .modal,.modal.modal-lg{
+      max-width:100%;border-radius:14px;
+      max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);
+    }
+    .modal-overlay.open .modal{animation:dropDown .28s cubic-bezier(.2,.8,.2,1);}
+    .modal-head{position:sticky;top:0;z-index:2;background:#fff;border-radius:14px 14px 0 0;padding:14px 16px;}
+    .modal-body{padding:16px;}
+
+    /* Toasts span the screen width */
+    #toast-container{left:12px;right:12px;top:12px;}
+    .toast{max-width:none;min-width:0;}
+
+    /* Auth / landing */
+    .auth-card{padding:24px 20px;}
+    .hero{padding:40px 0 64px;}
+    .hero h1{font-size:clamp(22px,7vw,28px);}
+    .section{padding:40px 0;}
+    .feature-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .container{padding:0 14px;}
+    .landing-nav .inner{gap:8px;}
+    .landing-nav .btn{padding:7px 11px;font-size:12px;}
+
+    /* Tables turn into stacked cards (classes + data-labels added by js/ui.js) */
+    .rt-wrap{border:none;background:transparent;overflow:visible;border-radius:0;}
+    table.rt,table.rt tbody{display:block;width:100%;}
+    table.rt thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+    table.rt tbody tr{
+      display:block;background:#fff;border:1px solid var(--line);border-radius:12px;
+      box-shadow:var(--shadow);padding:4px 12px;margin-bottom:10px;
+    }
+    table.rt tbody tr:hover{background:#fff;}
+    table.rt tbody td{
+      display:block;position:relative;min-height:34px;
+      padding:9px 0 9px 42%;text-align:right;font-size:13px;
+      border-bottom:1px dashed var(--line);word-break:break-word;
+    }
+    table.rt tbody td:last-child{border-bottom:none;}
+    table.rt tbody td::before{
+      content:attr(data-label);position:absolute;left:0;top:10px;width:38%;
+      text-align:left;font-size:10.5px;font-weight:700;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.4px;
+    }
+    table.rt tbody td[data-label=""],table.rt tbody td:not([data-label]){padding-left:0;}
+    table.rt tbody td[data-label=""]::before,table.rt tbody td:not([data-label])::before{display:none;}
+    table.rt tbody td[colspan]{text-align:center;}
+    table.rt tfoot{display:block;}
+    table.rt tfoot tr{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;padding:8px 4px;font-weight:700;}
+    table.rt tfoot td,table.rt tfoot th{display:block;border:0;padding:2px 4px;}
+  }
+
+  /* ---------- Very small phones ---------- */
+  @media (max-width:380px){
+    .stat-card .icon{display:none;}
+    .stat-card .label{padding-right:0;}
+    .bottom-nav a,.bottom-nav button{font-size:10px;}
+  }
+
+  /* ---------- Touch devices: bigger tap targets, no "stuck" hover effects ---------- */
+  @media (pointer:coarse){
+    .btn{min-height:40px;}
+    .btn-sm{min-height:36px;}
+    .btn-icon,.topbar-logout{min-width:40px;min-height:40px;}
+    .icon-action-btn{width:36px;height:36px;}
+    .nav-link{padding:11px 10px;}
+    .autocomplete-item{padding:12px;}
+  }
+  @media (hover:none){
+    .btn:not(:disabled):hover,.stat-card:hover,.feature:hover,.nav-link:not(.active):hover{transform:none;box-shadow:none;}
+    .stat-card:hover{box-shadow:var(--shadow);}
+  }
+}
+
+@keyframes dropDown{from{transform:translateY(-30px);opacity:0;}to{transform:none;opacity:1;}}

@@ -7,13 +7,15 @@
  *  POST/PUT  (admin) { service_product_id, service_variant_id, materials: [{material_product_id, material_variant_id, quantity}] }
  *        -> replaces that description's whole list (send an empty list to clear it)
  *
- * The cost shown comes live from the product/inventory record; it is only used for
- * profit. Nothing here changes what a service sells for.
+ * Products used only come out of stock when the service is sold. Their cost is never
+ * deducted from the service profit, and nothing here changes what a service sells for.
+ * Cost figures are shown to admins only.
  */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
 require_once __DIR__ . '/../helpers/service_material_helper.php';
+require_once __DIR__ . '/../helpers/access_helper.php';
 
 $user = require_login();
 $pdo = get_db();
@@ -48,6 +50,7 @@ if ($method === 'GET') {
         $r['line_cost'] = round((float)$r['unit_cost'] * (int)$r['quantity'], 2);
     }
     unset($r);
+    if (!is_admin_user($user)) $rows = hide_fields_in_rows($rows, ['unit_cost', 'line_cost']);
     respond(true, $rows);
 }
 

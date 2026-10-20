@@ -1,0 +1,52 @@
+/* =====================================================================
+   USER MENU  (top-right of every page)
+   Click the name -> dropdown with "My Profile" and "Log Out".
+   Replaces the separate logout button.
+   ===================================================================== */
+@keyframes userMenuIn{from{opacity:0;transform:translateY(-6px) scale(.97);}to{opacity:1;transform:none;}}
+
+.user-menu{position:relative;}
+
+/* the chip becomes a button */
+.user-menu-btn{
+  border:1px solid transparent;font:inherit;color:inherit;text-align:left;cursor:pointer;
+  transition:background .18s ease,border-color .18s ease,box-shadow .18s ease;
+}
+.user-menu-btn:hover,.user-menu-btn[aria-expanded="true"]{background:#fff;border-color:var(--gold);box-shadow:0 0 0 3px rgba(240,184,73,.18);}
+.user-menu-btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.user-menu-btn .user-meta{display:block;}
+.user-menu-btn .name,.user-menu-btn .role{display:block;line-height:1.25;}
+
+/* little chevron (pure CSS) that flips when open */
+.user-menu-btn::after{
+  content:'';width:6px;height:6px;margin:-3px 3px 0 2px;flex-shrink:0;
+  border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+  transform:rotate(45deg);transition:transform .2s ease,border-color .2s ease;
+}
+.user-menu-btn[aria-expanded="true"]::after{transform:rotate(-135deg);margin-top:3px;border-color:var(--gold-dim);}
+
+/* dropdown */
+.user-dropdown{
+  position:absolute;top:calc(100% + 8px);right:0;min-width:190px;z-index:140;
+  background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);
+  padding:6px;transform-origin:top right;animation:userMenuIn .16s ease;
+}
+.user-dropdown.hidden{display:none;}
+.user-dd-item{
+  display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;background:none;
+  border-radius:8px;font:inherit;font-size:13px;font-weight:600;color:var(--ink);text-align:left;
+  text-decoration:none;cursor:pointer;transition:background .15s ease,color .15s ease,transform .15s ease;
+}
+.user-dd-item .ui-icon{width:15px;height:15px;margin:0;flex-shrink:0;}
+.user-dd-item:hover{background:var(--bg);color:var(--gold-dim);transform:translateX(2px);}
+.user-dd-item.danger{color:var(--red);}
+.user-dd-item.danger:hover{background:#FDECEC;color:var(--red);}
+.user-dd-sep{height:1px;background:var(--line);margin:4px 6px;}
+
+/* small screens: avatar-only chip to save room */
+@media (max-width:600px){
+  .user-menu-btn .user-meta{display:none;}
+  .user-menu-btn{padding-right:8px;}
+}
+@media (prefers-reduced-motion: reduce){.user-dropdown{animation:none;}}
+@media print{.user-menu{display:none !important;}}

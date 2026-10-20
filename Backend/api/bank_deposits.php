@@ -13,9 +13,14 @@
  *                    It automatically becomes the next day's Opening Cash
  *                    (see helpers/float_helper.php - it can still be changed by hand).
  *
- * GET ?date=YYYY-MM-DD                       -> that day's deposits and totals
+ * A deposit can be recorded for ANY past day (a worker who forgot Monday's deposit can add it on Tuesday by
+ * choosing Monday's date), and a photo of the bank receipt can be attached. When a deposit is added to an
+ * earlier day, that day's Cash Audit and the next day's Opening Cash / Expected Cash follow automatically
+ * (see sync_day_deposits() and ca_apply_next_opening() in helpers/cash_audit_helper.php).
+ *
+ * GET ?date=YYYY-MM-DD                       -> that day's deposits and totals (+ the cash count already known for that day)
  * GET ?start=&end=&start_time=&end_time=&saved_by=&q=&limit=  -> history list
- * POST {deposit_date, denominations[], amount, remark}        -> record a deposit
+ * POST {deposit_date, denominations[], amount, remark, receipt(file)}  -> record a deposit (JSON, or multipart when a photo is attached)
  * DELETE ?id=                                                  -> admin only
  */
 require_once __DIR__ . '/../db.php';
@@ -43,6 +48,9 @@ function deposit_day_payload(PDO $pdo, string $date, ?float $totalCash = null): 
     }
     $day['total_cash'] = $totalCash === null ? null : ca_money($totalCash);
     $day['remaining_cash'] = $totalCash === null ? null : ca_money($totalCash - $day['total']);
+    $known = bd_known_cash($pdo, $date);          // cash count already saved for that day (Cash Audit, or an earlier deposit)
+    $day['known_cash'] = $known['amount'];
+    $day['known_cash_source'] = $known['source'];
     return $day;
 }
 
@@ -74,8 +82,9 @@ try {
         }
         $limit = !empty($_GET['limit']) ? min((int)$_GET['limit'], 1000) : 200;
 
+        $receiptCol = bd_receipt_column_ready($pdo) ? '(b.receipt_file IS NOT NULL) AS has_receipt,' : '0 AS has_receipt,';
         $stmt = $pdo->prepare("SELECT b.id, b.deposit_date, b.audit_id, b.total_cash, b.amount, b.remaining_cash, b.remark,
-                                      b.saved_by, b.saved_by_name, b.saved_by_role, b.created_at,
+                                      b.saved_by, b.saved_by_name, b.saved_by_role, b.created_at, $receiptCol
                                       a.user_remark AS audit_remark
                                FROM bank_deposits b
                                LEFT JOIN cash_audits a ON a.id = b.audit_id
@@ -84,6 +93,8 @@ try {
                                LIMIT $limit");
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) $row['has_receipt'] = (bool)$row['has_receipt'];
+        unset($row);
 
         $savers = $pdo->query('SELECT DISTINCT saved_by AS id, saved_by_name AS name FROM bank_deposits
                                WHERE saved_by IS NOT NULL ORDER BY saved_by_name ASC')->fetchAll();
@@ -92,22 +103,35 @@ try {
     }
 
     if ($method === 'POST') {
+        // A photo makes the browser send multipart/form-data. If the photo is bigger than the server accepts at all,
+        // PHP drops the whole request - say so clearly instead of complaining about a missing date.
+        if (empty($_POST) && empty($_FILES) && !empty($_SERVER['CONTENT_LENGTH'])
+            && stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/form-data') !== false) {
+            respond(false, null, 'That photo is too large for the server to accept. Please take a smaller photo and try again.', 422);
+        }
         $d = body();
 
         $date = clean($d['deposit_date'] ?? '');
         if (!valid_deposit_date($date)) respond(false, null, 'Please choose a valid date.', 422);
+        if ($date > today()) respond(false, null, 'The deposit date cannot be in the future.', 422);
 
-        // Total Cash = the cash counted in Part A, recomputed from the denominations.
+        // Total Cash = the cash counted in Part A, recomputed from the denominations. A deposit for another (earlier)
+        // day sends no count: it is taken out of the cash already saved for that day in the Cash Audit.
+        $denoms = $d['denominations'] ?? [];
+        if (is_string($denoms)) $denoms = json_decode($denoms, true) ?: [];
         $counted = 0;
-        if (!empty($d['denominations']) && is_array($d['denominations'])) {
-            foreach ($d['denominations'] as $row) {
+        if (is_array($denoms)) {
+            foreach ($denoms as $row) {
                 $denom = (int)($row['denom'] ?? 0);
                 $qty = max(0, (int)($row['qty'] ?? 0));
                 if ($denom > 0) $counted += $denom * $qty;
             }
         }
         if ($counted <= 0) {
-            respond(false, null, 'Count the cash in Part A of the Cash Audit first - the bank deposit is taken out of the cash counted.', 422);
+            $counted = bd_known_cash($pdo, $date)['amount'];
+        }
+        if ($counted <= 0) {
+            respond(false, null, 'No cash count has been saved for ' . $date . ' yet. Open that date on the Cash Audit sheet, count the cash in Part A and save it, then record the deposit.', 422);
         }
 
         if (!isset($d['amount']) || !is_numeric($d['amount'])) respond(false, null, 'Please enter the amount deposited.', 422);
@@ -116,32 +140,62 @@ try {
 
         $already = get_deposit_day_summary($pdo, $date)['total'];
         $available = $counted - $already;
+        $dayWord = $date === today() ? 'today' : 'on that day';
         if ($amount > $available + 0.001) {
             respond(false, null, 'The bank deposit (TZS ' . number_format($amount) . ') is more than the cash left to bank (TZS '
-                . number_format(max($available, 0)) . ($already > 0 ? ', after TZS ' . number_format($already) . ' already deposited today' : '') . ').', 422);
+                . number_format(max($available, 0)) . ($already > 0 ? ', after TZS ' . number_format($already) . ' already deposited ' . $dayWord : '') . ').', 422);
         }
         $remaining = round($available - $amount, 2);
 
         $remark = mb_substr(clean($d['remark'] ?? ''), 0, 1000);
 
+        // Receipt photo (optional). Checked and stored before anything is written to the database.
+        $receipt = null;
+        if (!empty($_FILES['receipt']) && (int)$_FILES['receipt']['error'] !== UPLOAD_ERR_NO_FILE) {
+            if (!bd_receipt_column_ready($pdo)) respond(false, null, bd_receipt_upgrade_message(), 500);
+            $receipt = bd_store_receipt($_FILES['receipt'], $date);
+        }
+
         $auditIdStmt = $pdo->prepare('SELECT id FROM cash_audits WHERE audit_date = ? ORDER BY id DESC LIMIT 1');
         $auditIdStmt->execute([$date]);
         $auditId = $auditIdStmt->fetchColumn() ?: null;
 
-        $stmt = $pdo->prepare('INSERT INTO bank_deposits
-            (deposit_date, audit_id, total_cash, amount, remaining_cash, remark, saved_by, saved_by_name, saved_by_role, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,NOW())');
-        $stmt->execute([$date, $auditId, $counted, $amount, $remaining, $remark, $user['id'], $user['full_name'], $user['role']]);
-        $newId = $pdo->lastInsertId();
+        // Remember what the next saved Cash Audit's opening cash is now, so it can follow if this deposit changes it.
+        $nextBefore = ca_snapshot_next_opening($pdo, $date);
 
-        // Keeps the day's latest saved Cash Audit showing the deposit and remaining cash.
-        sync_day_deposits($pdo, $date);
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare('INSERT INTO bank_deposits
+                (deposit_date, audit_id, total_cash, amount, remaining_cash, remark, saved_by, saved_by_name, saved_by_role, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,NOW())');
+            $stmt->execute([$date, $auditId, $counted, $amount, $remaining, $remark, $user['id'], $user['full_name'], $user['role']]);
+            $newId = $pdo->lastInsertId();
+            if ($receipt) {
+                $pdo->prepare('UPDATE bank_deposits SET receipt_file = ?, receipt_mime = ? WHERE id = ?')->execute([$receipt['file'], $receipt['mime'], $newId]);
+            }
 
+            // Keeps the day's latest saved Cash Audit showing the deposit and remaining cash...
+            sync_day_deposits($pdo, $date);
+            // ...and, for an earlier day, the next day's saved Cash Audit (opening cash -> expected cash -> variance).
+            $audits = ca_apply_next_opening($pdo, $nextBefore);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            if ($receipt) bd_delete_receipt_file($receipt['file']);
+            throw $e;
+        }
+
+        $backdated = $date < today();
         log_activity($pdo, $user, 'create', 'bank_deposit', $newId,
-            'Bank deposit of TZS ' . number_format($amount) . ' for ' . $date . ' (cash counted TZS ' . number_format($counted)
-            . ', remaining TZS ' . number_format($remaining) . ')' . ($remark !== '' ? ' - ' . $remark : ''));
+            'Bank deposit of TZS ' . number_format($amount) . ' for ' . $date . ($backdated ? ' (recorded late, on ' . today() . ')' : '')
+            . ' (cash counted TZS ' . number_format($counted) . ', remaining TZS ' . number_format($remaining) . ')'
+            . ($receipt ? ', receipt photo attached' : '')
+            . ($audits > 0 ? ', updated ' . $audits . ' saved cash audit(s) of ' . $nextBefore['date'] : '')
+            . ($remark !== '' ? ' - ' . $remark : ''));
 
-        respond(true, deposit_day_payload($pdo, $date, $counted), 'Bank deposit saved. Remaining cash TZS ' . number_format($remaining) . ' will be the next opening cash.');
+        $msg = 'Bank deposit saved' . ($backdated ? ' for ' . $date : '') . '. Remaining cash TZS ' . number_format($remaining) . ' will be the next opening cash.';
+        if ($backdated) $msg .= ' The Cash Audit history has been updated.';
+        respond(true, deposit_day_payload($pdo, $date, $counted), $msg);
     }
 
     if ($method === 'DELETE') {
@@ -150,15 +204,28 @@ try {
         $id = (int)($_GET['id'] ?? 0);
         if (!$id) respond(false, null, 'Deposit id is required.', 422);
 
-        $lookup = $pdo->prepare('SELECT deposit_date, amount FROM bank_deposits WHERE id = ?');
+        $lookup = $pdo->prepare('SELECT * FROM bank_deposits WHERE id = ?');
         $lookup->execute([$id]);
         $row = $lookup->fetch();
         if (!$row) respond(false, null, 'Deposit not found.', 404);
 
-        $pdo->prepare('DELETE FROM bank_deposits WHERE id = ?')->execute([$id]);
-        sync_day_deposits($pdo, $row['deposit_date']);
+        // Removing a deposit changes that day's Remaining Cash too, so the next saved Cash Audit follows (see POST).
+        $nextBefore = ca_snapshot_next_opening($pdo, $row['deposit_date']);
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('DELETE FROM bank_deposits WHERE id = ?')->execute([$id]);
+            sync_day_deposits($pdo, $row['deposit_date']);
+            $audits = ca_apply_next_opening($pdo, $nextBefore);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+        bd_delete_receipt_file($row['receipt_file'] ?? null);
         log_activity($pdo, $user, 'delete', 'bank_deposit', $id,
-            'Deleted bank deposit of TZS ' . number_format((float)$row['amount']) . ' for ' . $row['deposit_date']);
+            'Deleted bank deposit of TZS ' . number_format((float)$row['amount']) . ' for ' . $row['deposit_date']
+            . (!empty($row['receipt_file']) ? ' (its receipt photo was removed too)' : '')
+            . ($audits > 0 ? ', updated ' . $audits . ' saved cash audit(s) of ' . $nextBefore['date'] : ''));
         respond(true, null, 'Bank deposit removed.');
     }
 

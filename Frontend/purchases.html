@@ -4,11 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchases — eDESK Print &amp; Digital</title>
+    <title>Product Purchases — eDESK Print &amp; Digital</title>
     <script src="js/manifest-init.js"></script>
     <link rel="icon" href="assets/icon-192.png">
     <meta name="theme-color" content="#101B30">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/usermenu.css">
 </head>
 
 <body>
@@ -23,13 +24,15 @@
                 <div class="nav-label">Operations</div>
                 <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
                 <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
-                <a href="purchases.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="purchases.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Product Purchases</a>
+                <a href="service-purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Service Purchases</a>
                 <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="cash-audit.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg></span> Cash Audit</a>
                 <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
                 <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a></div>
             <div class="nav-group">
                 <div class="nav-label">Insights</div>
-                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="reports.html" class="nav-link admin-only"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
                 <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
                 <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a></div>
             <div class="nav-group admin-only">
@@ -49,27 +52,33 @@
           <svg class="ui-icon"><use href="assets/icons.svg#menu"></use></svg>
         </button>
                     <div>
-                        <div class="page-title">Purchases</div>
+                        <div class="page-title">Product Purchases</div>
 
                     </div>
                 </div>
                 <div class="flex gap-8" style="align-items:center;">
                     <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadPurchasesExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
-                    <div class="user-chip">
-                        <div class="avatar js-user-avatar">--</div>
-                        <div>
-                            <div class="name js-user-name">—</div>
-                            <div class="role js-user-role">—</div>
-                        </div>
+                    <div class="user-menu" id="userMenu">
+                      <button type="button" class="user-chip user-menu-btn" id="userMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="userDropdown" title="Account menu">
+                        <span class="avatar js-user-avatar">--</span>
+                        <span class="user-meta">
+                          <span class="name js-user-name">—</span>
+                          <span class="role js-user-role">—</span>
+                        </span>
+                      </button>
+                      <div class="user-dropdown hidden" id="userDropdown" role="menu">
+                        <a href="profile.html" class="user-dd-item" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg> My Profile</a>
+                        <div class="user-dd-sep"></div>
+                        <button type="button" class="user-dd-item danger js-logout" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg> Log Out</button>
+                      </div>
                     </div>
-                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
                 </div>
             </div>
 
             <div class="main-content">
 
                 <p class="muted worker-note" id="workerPurchaseNote" style="font-size:12px;">
-                    You can view purchase history below. Only admins can add new purchases or import a supplier file.
+                    You can view product purchase history below. Only admins can add new purchases or import a supplier file. Items bought for providing services are recorded separately on the <a href="service-purchases.html" class="gold">Service Purchases</a> page.
                 </p>
 
                 <div class="admin-only no-print">
@@ -124,6 +133,15 @@
                                 </div>
                             </div>
 
+                            <div class="field-row">
+                                <div class="field">
+                                    <label id="sp-minimum-label">Minimum Selling Price (TZS)</label>
+                                    <input type="number" id="sp-minimum" min="0" step="0.01">
+                                    <p class="help-text" id="sp-minimum-hint">Optional. The lowest price this item may be sold at. Leave blank to keep the current minimum price.</p>
+                                </div>
+                                <div class="field"></div>
+                            </div>
+
                             <div class="field" id="sp-category-field">
                                 <label>Category (only used for new products)</label>
                                 <input type="text" id="sp-category" placeholder="e.g. Paper, Printing">
@@ -170,12 +188,12 @@
                                     <thead>
                                         <tr>
                                             <th style="min-width:170px;">Product Name</th>
+                                            <th style="min-width:120px;">Category</th>
                                             <th style="min-width:130px;">Description</th>
                                             <th style="min-width:80px;">Unit</th>
                                             <th style="min-width:90px;">Quantity</th>
                                             <th style="min-width:110px;">Buying Price</th>
                                             <th style="min-width:110px;">Selling Price</th>
-                                            <th style="min-width:120px;">Category</th>
                                             <th>Status</th>
                                             <th></th>
                                         </tr>
@@ -204,14 +222,14 @@
                         </div>
                     </div>
                     <div class="ph-bottom">
-                        <div class="ph-report-of">REPORT: <strong id="purchasesReportTitle">Purchases</strong></div>
+                        <div class="ph-report-of">REPORT: <strong id="purchasesReportTitle">Product Purchases</strong></div>
                         <div class="meta" id="print-date-purchases"></div>
                     </div>
                 </div>
 
                 <div class="card mt-24">
                     <div class="flex-between no-print" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                        <div class="card-title" style="margin:0;">Recent Purchases</div>
+                        <div class="card-title" style="margin:0;">Recent Product Purchases</div>
                         <div class="filter-bar" style="margin:0;">
                             <div class="field" style="margin:0;width:130px;">
                                 <label>Period</label>
@@ -248,17 +266,19 @@
                                 <tr>
                                     <th>Date</th>
                                     <th>Product</th>
+                                    <th>Description</th>
                                     <th>Unit</th>
                                     <th>Quantity</th>
-                                    <th>Buying Price</th>
-                                    <th>Total Cost</th>
+                                    <th class="admin-only">Buying Price</th>
+                                    <th class="admin-only">Total Cost</th>
                                     <th>Source</th>
                                     <th>Recorded By</th>
+                                    <th class="admin-only no-print">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="recentPurchasesBody">
                                 <tr>
-                                    <td colspan="8" class="muted">Loading...</td>
+                                    <td colspan="10" class="muted">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -266,7 +286,7 @@
                     <div class="report-totals-row">
                         <div class="rt-item">Total Products Purchased<strong id="pu-total-types">0</strong></div>
                         <div class="rt-item">Total Items Purchased<strong id="pu-total-units">0</strong></div>
-                        <div class="rt-item">Overall Total Cost<strong id="pu-total-cost">TZS 0</strong></div>
+                        <div class="rt-item admin-only">Overall Total Cost<strong id="pu-total-cost">TZS 0</strong></div>
                     </div>
                 </div>
 
@@ -315,7 +335,41 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Edit Purchase (admin only) -->
+    <div class="modal-overlay" id="editPurchaseModal">
+        <div class="modal">
+            <div class="modal-head">
+                <h3>Edit Purchase</h3>
+                <button class="modal-close" onclick="closeModal('editPurchaseModal')"><svg class="ui-icon"><use href="assets/icons.svg#x"></use></svg></button>
+            </div>
+            <div class="modal-body">
+                <p class="help-text" id="editPurchaseContext" style="margin-bottom:12px;"></p>
+                <form id="editPurchaseForm">
+                    <input type="hidden" id="ep-id">
+                    <div class="field">
+                        <label>Quantity</label>
+                        <input type="number" id="ep-qty" min="1" step="1" required>
+                        <p class="help-text">Stock is adjusted by the difference automatically.</p>
+                    </div>
+                    <div class="field">
+                        <label>Buying Price (per unit, TZS)</label>
+                        <input type="number" id="ep-buying" min="0" step="0.01" required>
+                    </div>
+                    <div class="field">
+                        <label>Purchase Date</label>
+                        <input type="date" id="ep-date" required>
+                    </div>
+                    <div class="field">
+                        <label>Note (optional)</label>
+                        <input type="text" id="ep-note" maxlength="255">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-full mt-8">Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/guard.js"></script>

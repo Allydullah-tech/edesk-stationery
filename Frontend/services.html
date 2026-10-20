@@ -9,6 +9,7 @@
     <link rel="icon" href="assets/icon-192.png">
     <meta name="theme-color" content="#101B30">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/usermenu.css">
 </head>
 
 <body>
@@ -26,13 +27,15 @@
                 <div class="nav-label">Operations</div>
                 <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
                 <a href="services.html" class="nav-link active"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
-                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Product Purchases</a>
+                <a href="service-purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Service Purchases</a>
                 <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="cash-audit.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg></span> Cash Audit</a>
                 <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
                 <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a></div>
             <div class="nav-group">
                 <div class="nav-label">Insights</div>
-                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="reports.html" class="nav-link admin-only"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
                 <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
                 <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a></div>
             <div class="nav-group admin-only">
@@ -57,14 +60,20 @@
                     <button class="btn btn-outline btn-sm" onclick="openNamesOnlyModal()">View Names Only</button>
                     <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadProductsExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
                     <button class="btn btn-primary btn-sm admin-only" onclick="openProductModal()">+ Add Service</button>
-                    <div class="user-chip">
-                        <div class="avatar js-user-avatar">--</div>
-                        <div>
-                            <div class="name js-user-name">—</div>
-                            <div class="role js-user-role">—</div>
-                        </div>
+                    <div class="user-menu" id="userMenu">
+                      <button type="button" class="user-chip user-menu-btn" id="userMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="userDropdown" title="Account menu">
+                        <span class="avatar js-user-avatar">--</span>
+                        <span class="user-meta">
+                          <span class="name js-user-name">—</span>
+                          <span class="role js-user-role">—</span>
+                        </span>
+                      </button>
+                      <div class="user-dropdown hidden" id="userDropdown" role="menu">
+                        <a href="profile.html" class="user-dd-item" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg> My Profile</a>
+                        <div class="user-dd-sep"></div>
+                        <button type="button" class="user-dd-item danger js-logout" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg> Log Out</button>
+                      </div>
                     </div>
-                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
                 </div>
             </div>
 

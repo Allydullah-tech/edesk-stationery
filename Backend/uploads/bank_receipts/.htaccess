@@ -1,0 +1,8 @@
+# Receipts are private: they are only served by api/bank_deposit_receipt.php after login.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

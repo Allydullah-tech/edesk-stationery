@@ -6,7 +6,7 @@
  * the cache is only used as a fallback when there is no connection.
  * Data (API calls) always goes straight to the network, never cached.
  */
-const CACHE_NAME = 'edesk-stationery-v14';
+const CACHE_NAME = 'edesk-stationery-v20';
 const SHELL_FILES = [
   './index.html',
   './login.html',
@@ -16,7 +16,9 @@ const SHELL_FILES = [
   './services.html',
   './debts.html',
   './purchases.html',
+  './service-purchases.html',
   './sales.html',
+  './cash-audit.html',
   './expenses.html',
   './damages.html',
   './reports.html',
@@ -32,6 +34,7 @@ const SHELL_FILES = [
   './js/products.js',
   './js/debts.js',
   './js/purchases.js',
+  './js/service-purchases.js',
   './js/sales.js',
   './js/cash-audit.js',
   './js/expenses.js',

@@ -9,7 +9,10 @@
     <link rel="icon" href="assets/icon-192.png">
     <meta name="theme-color" content="#101B30">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/usermenu.css">
     <link rel="stylesheet" href="css/purchase-order.css">
+    <link rel="stylesheet" href="css/notifications.css">
+    <link rel="stylesheet" href="css/dashboard-anim.css">
 </head>
 
 <body>
@@ -27,14 +30,16 @@
                 <div class="nav-label">Operations</div>
                 <a href="products.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#package"></use></svg></span> Products</a>
                 <a href="services.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Services</a>
-                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Purchases</a>
+                <a href="purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg></span> Product Purchases</a>
+                <a href="service-purchases.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg></span> Service Purchases</a>
                 <a href="sales.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg></span> Sales </a>
+                <a href="cash-audit.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#coins"></use></svg></span> Cash Audit</a>
                 <a href="expenses.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg></span> Expenses</a>
                 <a href="damages.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></span> Damages &amp; Waste</a>
             </div>
             <div class="nav-group">
                 <div class="nav-label">Insights</div>
-                <a href="reports.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
+                <a href="reports.html" class="nav-link admin-only"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></span> Reports</a>
                 <a href="debts.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#money"></use></svg></span> Debts </a>
                 <a href="customers.html" class="nav-link"><span class="ic"><svg class="ui-icon"><use href="assets/icons.svg#users"></use></svg></span> Customers</a>
             </div>
@@ -63,14 +68,27 @@
                 </div>
                 <div class="flex gap-8" style="align-items:center;">
                     <button class="btn btn-outline btn-sm" onclick="openDownloadMenu(this, () => window.print(), downloadDashboardExcel)"><svg class="ui-icon"><use href="assets/icons.svg#download"></use></svg> Download</button>
-                    <div class="user-chip">
-                        <div class="avatar js-user-avatar">--</div>
-                        <div>
-                            <div class="name js-user-name">—</div>
-                            <div class="role js-user-role">—</div>
+                    <div class="notif-wrap" id="notifWrap">
+                        <button type="button" class="notif-bell" id="notifBell" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notifPanel"><svg class="ui-icon"><use href="assets/icons.svg#bell"></use></svg><span class="notif-badge hidden" id="notifBadge">0</span></button>
+                        <div class="notif-panel hidden" id="notifPanel" role="dialog" aria-label="Notifications">
+                            <div class="notif-head"><strong>Notifications</strong><span class="notif-count" id="notifCount"></span></div>
+                            <div class="notif-list" id="notifList"><div class="notif-empty">Loading…</div></div>
                         </div>
                     </div>
-                    <button class="topbar-logout js-logout" title="Log out"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg></button>
+                    <div class="user-menu" id="userMenu">
+                      <button type="button" class="user-chip user-menu-btn" id="userMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="userDropdown" title="Account menu">
+                        <span class="avatar js-user-avatar">--</span>
+                        <span class="user-meta">
+                          <span class="name js-user-name">—</span>
+                          <span class="role js-user-role">—</span>
+                        </span>
+                      </button>
+                      <div class="user-dropdown hidden" id="userDropdown" role="menu">
+                        <a href="profile.html" class="user-dd-item" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#user"></use></svg> My Profile</a>
+                        <div class="user-dd-sep"></div>
+                        <button type="button" class="user-dd-item danger js-logout" role="menuitem"><svg class="ui-icon"><use href="assets/icons.svg#log-out"></use></svg> Log Out</button>
+                      </div>
+                    </div>
                 </div>
             </div>
 
@@ -88,6 +106,26 @@
                     <div class="ph-bottom">
                         <div class="ph-report-of">REPORT: <strong>Dashboard</strong></div>
                         <div class="meta" id="print-date-dashboard"></div>
+                    </div>
+                </div>
+
+                <div class="dash-hero no-print" id="dashHero">
+                    <div class="hero-particles" id="heroParticles" aria-hidden="true"></div>
+                    <div class="hero-main">
+                        <div class="hero-eyebrow" id="heroGreeting">Welcome back</div>
+                        <h1 class="hero-name" id="heroName">&nbsp;</h1>
+                        <p class="hero-sub">Here is how the shop is doing today.</p>
+                        <div class="hero-actions">
+                            <a href="sales.html?new=1" class="hero-btn hero-btn-primary"><svg class="ui-icon"><use href="assets/icons.svg#receipt"></use></svg> Record a Sale</a>
+                            <a href="purchases.html" class="hero-btn"><svg class="ui-icon"><use href="assets/icons.svg#cart"></use></svg> New Purchase</a>
+                            <a href="expenses.html?new=1" class="hero-btn"><svg class="ui-icon"><use href="assets/icons.svg#bulb"></use></svg> Add Expense</a>
+                        </div>
+                    </div>
+                    <div class="hero-date" aria-live="off">
+                        <div class="hd-weekday" id="heroWeekday">—</div>
+                        <div class="hd-day" id="heroDay">--</div>
+                        <div class="hd-month" id="heroMonth">—</div>
+                        <div class="hd-time"><span id="heroTime">--:--</span><small id="heroSecs">--</small></div>
                     </div>
                 </div>
 
@@ -112,12 +150,12 @@
                             <div class="label">Expenses</div>
                             <div class="value" id="d-expenses">—</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card admin-only">
                             <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#alert-triangle"></use></svg></div>
                             <div class="label">Damage Loss</div>
                             <div class="value red" id="d-damage">—</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card admin-only">
                             <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#trending-up"></use></svg></div>
                             <div class="label">Profit</div>
                             <div class="value green" id="d-profit">—</div>
@@ -136,8 +174,8 @@
                         <p>Sales = <strong id="d-sales-print">TZS 0</strong></p>
                         <p>Transactions = <strong id="d-transactions-print">0</strong></p>
                         <p>Expenses = <strong id="d-expenses-print">TZS 0</strong></p>
-                        <p>Damage Loss = <strong id="d-damage-print">TZS 0</strong></p>
-                        <p>Profit = <strong id="d-profit-print">TZS 0</strong></p>
+                        <p class="admin-only">Damage Loss = <strong id="d-damage-print">TZS 0</strong></p>
+                        <p class="admin-only">Profit = <strong id="d-profit-print">TZS 0</strong></p>
                         <p>On Credit = <strong id="d-credit-print">TZS 0</strong></p>
                     </div>
                 </div>
@@ -160,7 +198,7 @@
                             <div class="label">Sales This Month</div>
                             <div class="value gold" id="d-month-sales">—</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card admin-only">
                             <div class="icon"><svg class="ui-icon"><use href="assets/icons.svg#bar-chart"></use></svg></div>
                             <div class="label">Net Profit (Month)</div>
                             <div class="value green" id="d-month-profit">—</div>
@@ -171,7 +209,7 @@
                         <p>Total Products = <strong id="d-products-print">0</strong></p>
                         <p>Total Services = <strong id="d-services-print">0</strong></p>
                         <p>Sales This Month = <strong id="d-month-sales-print">TZS 0</strong></p>
-                        <p>Net Profit (Month) = <strong id="d-month-profit-print">TZS 0</strong></p>
+                        <p class="admin-only">Net Profit (Month) = <strong id="d-month-profit-print">TZS 0</strong></p>
                     </div>
                 </div>
 
@@ -185,7 +223,7 @@
                                         <th>Name</th>
                                         <th>Qty</th>
                                         <th>Revenue</th>
-                                        <th>Profit</th>
+                                        <th class="admin-only">Profit</th>
                                     </tr>
                                 </thead>
                                 <tbody id="topSellingBody">
@@ -260,10 +298,12 @@
 
     <div id="purchaseOrderPrint" aria-hidden="true"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/guard.js"></script>
-    <script src="js/dashboard.js"></script>
+    <script src="js/dashboard-anim.js"></script>
+    <script src="js/dashboard.js?v=3"></script>
 </body>
 
 </html>

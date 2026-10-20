@@ -1,0 +1,77 @@
+/* =====================================================================
+   NOTIFICATION BELL + PANEL  (topbar, after the Download button)
+   ===================================================================== */
+@keyframes bellRing{
+  0%,100%{transform:rotate(0);}
+  10%{transform:rotate(16deg);} 20%{transform:rotate(-14deg);}
+  30%{transform:rotate(11deg);} 40%{transform:rotate(-9deg);}
+  50%{transform:rotate(5deg);}  60%{transform:rotate(0);}
+}
+@keyframes badgePulse{
+  0%{box-shadow:0 0 0 0 rgba(229,72,77,.55);}
+  70%{box-shadow:0 0 0 8px rgba(229,72,77,0);}
+  100%{box-shadow:0 0 0 0 rgba(229,72,77,0);}
+}
+@keyframes notifIn{from{opacity:0;transform:translateY(-8px) scale(.97);}to{opacity:1;transform:none;}}
+@keyframes notifItemIn{from{opacity:0;transform:translateX(12px);}to{opacity:1;transform:none;}}
+
+.notif-wrap{position:relative;}
+.notif-bell{
+  position:relative;width:34px;height:34px;border-radius:8px;border:1px solid var(--line);
+  background:#fff;color:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;
+}
+.notif-bell:hover,.notif-bell[aria-expanded="true"]{background:var(--bg);border-color:var(--gold);color:var(--gold-dim);}
+.notif-bell .ui-icon{width:16px;height:16px;margin:0;transform-origin:50% 0;}
+.notif-bell.has-alerts .ui-icon{animation:bellRing 1.6s ease 1s 2;}
+.notif-bell.has-alerts:hover .ui-icon{animation:bellRing 1s ease;}
+.notif-badge{
+  position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;
+  background:var(--red);color:#fff;font-size:10.5px;font-weight:700;line-height:18px;text-align:center;
+  border:2px solid #fff;box-sizing:content-box;animation:badgePulse 2s ease-out infinite;
+}
+.notif-badge.hidden{display:none;}
+
+.notif-panel{
+  position:absolute;top:calc(100% + 10px);right:0;width:370px;max-width:calc(100vw - 24px);z-index:130;
+  background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);
+  overflow:hidden;transform-origin:top right;animation:notifIn .18s ease;
+}
+.notif-panel.hidden{display:none;}
+.notif-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);}
+.notif-head strong{font-size:13.5px;}
+.notif-head .notif-count{font-size:11px;color:var(--muted);}
+.notif-list{max-height:min(430px,calc(100vh - 140px));overflow-y:auto;}
+.notif-item{
+  display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);
+  border-left:3px solid var(--gold);animation:notifItemIn .3s ease backwards;
+}
+.notif-item:last-child{border-bottom:none;}
+.notif-item:nth-child(2){animation-delay:.05s;} .notif-item:nth-child(3){animation-delay:.10s;}
+.notif-item:nth-child(4){animation-delay:.15s;} .notif-item:nth-child(5){animation-delay:.20s;}
+.notif-item.sev-red{border-left-color:var(--red);background:#FFF9F8;}
+.notif-item.sev-gold{border-left-color:var(--gold);background:#FFFBF2;}
+.notif-item.sev-blue{border-left-color:#4A7BE0;background:#F7F9FF;}
+.notif-ic{
+  width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:#fff;border:1px solid var(--line);
+}
+.notif-ic .ui-icon{width:15px;height:15px;margin:0;}
+.sev-red .notif-ic{color:var(--red);} .sev-gold .notif-ic{color:var(--gold-dim);} .sev-blue .notif-ic{color:#4A7BE0;}
+.notif-body{flex:1;min-width:0;}
+.notif-title{font-size:12.8px;font-weight:700;}
+.notif-text{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45;}
+.notif-sub{margin:6px 0 0;padding:0;list-style:none;font-size:11.5px;color:var(--ink);}
+.notif-sub li{display:flex;justify-content:space-between;gap:10px;padding:2px 0;}
+.notif-sub li span:last-child{color:var(--muted);white-space:nowrap;}
+.notif-link{display:inline-block;margin-top:8px;font-size:11.8px;font-weight:700;color:var(--gold-dim);text-decoration:none;}
+.notif-link:hover{text-decoration:underline;}
+.notif-empty{padding:30px 16px;text-align:center;color:var(--muted);font-size:12.5px;}
+.notif-empty .ui-icon{width:28px;height:28px;color:var(--green);display:block;margin:0 auto 8px;}
+
+@media (max-width:520px){
+  .notif-panel{position:fixed;top:64px;right:12px;left:12px;width:auto;}
+}
+@media (prefers-reduced-motion: reduce){
+  .notif-bell .ui-icon,.notif-badge,.notif-panel,.notif-item{animation:none !important;}
+}
+@media print{.notif-wrap{display:none !important;}}

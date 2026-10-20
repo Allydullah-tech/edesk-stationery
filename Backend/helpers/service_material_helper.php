@@ -1,20 +1,28 @@
 <?php
 /**
- * eDESK Print & Digital - Products used by services
+ * eDESK Print & Digital - Products / materials used by services
  *
- * When a service is SOLD, the cashier can say which stock products were used to
- * provide it (e.g. "Manila Binding" used 1 x Manila). The rules, in one place:
+ * When a service is SOLD, the cashier can say which SERVICE STOCK items were used to
+ * provide it (e.g. "Manila Binding" used 1 x Manila Cover). Those items come from the
+ * Service Purchases stock (tables service_items / service_purchases), which is kept
+ * completely separate from the Product Purchases stock (products / product_variants).
+ *
+ * The rules, in one place:
  *
  *   Sales / cash : ALWAYS the full price charged. Never reduced by material cost.
- *   Stock        : the materials are deducted from inventory.
- *   Profit       : revenue - cost of the materials consumed.
+ *   Stock        : the items are deducted from SERVICE stock - never from product stock.
+ *   Profit       : sale_items.profit / sale_transactions.total_profit are NOT changed (a service
+ *                  line still carries its full selling price). The real service profit for a period
+ *                  (service revenue minus service purchase costs) is worked out separately by
+ *                  api/service_purchases.php?view=profit.
  *
- * So for the sale line this file only ever feeds the PROFIT fields
- * (sale_items.buying_price / sale_items.profit) and stock. It never touches
- * unit_price, subtotal or total_amount - those drive sales reports and the
- * daily cash audit.
+ * For the sale line this file only feeds SERVICE STOCK (and a snapshot of what was used).
+ * It never touches unit_price, subtotal, total_amount or total_profit - those drive the sales
+ * reports and the daily cash audit.
  *
- * Everything is a safe no-op until upgrade_v8_service_materials.php has been run.
+ * Older service sales (recorded before upgrade_v10_service_purchases.php) took their materials
+ * from PRODUCT stock. Those snapshot rows have no service_item_id, and they are still given
+ * back to PRODUCT stock if such a sale is edited or deleted, so old data stays correct.
  */
 
 /** True once the v8 table (sale_item_materials) exists. */
@@ -30,23 +38,56 @@ function sm_feature_ready(PDO $pdo): bool
     return $ready;
 }
 
+/** True once the v10 upgrade (service_items table + sale_item_materials.service_item_id) has been run. */
+function sm_service_stock_ready(PDO $pdo): bool
+{
+    static $ready = null;
+    if ($ready !== null) return $ready;
+    try {
+        $ready = sm_feature_ready($pdo)
+            && $pdo->query("SHOW TABLES LIKE 'service_items'")->rowCount() > 0
+            && $pdo->query("SHOW COLUMNS FROM `sale_item_materials` LIKE 'service_item_id'")->rowCount() > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
 function sm_upgrade_message(): string
 {
     return 'The database is missing the "products used by services" table. Please run Backend/upgrade_v8_service_materials.php once, then try again.';
 }
 
-/** Stable key for the stock row a material draws from. */
+/** True once upgrade_v11_service_item_descriptions.php has been run (service_items.description exists). */
+function sm_item_description_ready(PDO $pdo): bool
+{
+    static $ready = null;
+    if ($ready !== null) return $ready;
+    try {
+        $ready = $pdo->query("SHOW COLUMNS FROM `service_items` LIKE 'description'")->rowCount() > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function sm_service_stock_upgrade_message(): string
+{
+    return 'The database is missing the Service Purchases tables. Please run Backend/upgrade_v10_service_purchases.php once, then try again.';
+}
+
+/** Stable key for the PRODUCT stock row an older (pre-v10) material drew from. */
 function sm_stock_key($productId, $variantId): string
 {
     return $variantId ? 'v' . (int)$variantId : 'p' . (int)$productId;
 }
 
 /**
- * Work out what ONE sale line of a service consumes, from the products the cashier
- * picked while recording the sale. $requested = [['product_id'=>, 'variant_id'=>, 'quantity'=>], ...]
+ * Work out what ONE sale line of a service consumes, from the service stock items the cashier
+ * picked while recording the sale. $requested = [['service_item_id'=>, 'quantity'=>], ...]
  * where quantity is the amount used per 1 service (it is multiplied by the sale quantity).
  *
- * The cost price comes from the product/inventory record - the cashier never types it.
+ * The cost price comes from the Service Purchases record - the cashier never types it.
  * Returns ['materials' => [...snapshot rows...], 'unit_cost' => cost per 1 service, 'total_cost' => cost for the line].
  * Calls respond() and exits on invalid input.
  */
@@ -54,59 +95,42 @@ function sm_build_line_materials(PDO $pdo, array $requested, int $saleQty): arra
 {
     $out = ['materials' => [], 'unit_cost' => 0.0, 'total_cost' => 0.0];
     if (!$requested) return $out;
-    if (!sm_feature_ready($pdo)) respond(false, null, sm_upgrade_message(), 500);
 
-    // Merge repeated products into one line.
+    // Merge repeated items into one line.
     $merged = [];
     foreach ($requested as $r) {
-        $pid = (int)($r['product_id'] ?? 0);
-        if (!$pid) continue; // blank row
-        $vid = !empty($r['variant_id']) ? (int)$r['variant_id'] : null;
+        $sid = (int)($r['service_item_id'] ?? 0);
+        if (!$sid) continue; // blank row
         $qty = (int)($r['quantity'] ?? 0);
-        if ($qty <= 0) respond(false, null, 'Enter a quantity of 1 or more for every product used.', 422);
-        $k = $pid . ':' . ($vid ?: 0);
-        if (isset($merged[$k])) $merged[$k]['quantity'] += $qty;
-        else $merged[$k] = ['product_id' => $pid, 'variant_id' => $vid, 'quantity' => $qty];
+        if ($qty <= 0) respond(false, null, 'Enter a quantity of 1 or more for every item used.', 422);
+        if (isset($merged[$sid])) $merged[$sid]['quantity'] += $qty;
+        else $merged[$sid] = ['service_item_id' => $sid, 'quantity' => $qty];
     }
+    if (!$merged) return $out;
+
+    if (!sm_service_stock_ready($pdo)) respond(false, null, sm_service_stock_upgrade_message(), 500);
 
     $perUnitCost = 0.0;
     $totalCost = 0.0;
+    $descSql = sm_item_description_ready($pdo) ? 'description' : "'' AS description";
     foreach ($merged as $m) {
-        $pStmt = $pdo->prepare('SELECT id, name, is_service, buying_price, unit FROM products WHERE id = ?');
-        $pStmt->execute([$m['product_id']]);
-        $p = $pStmt->fetch();
-        if (!$p) respond(false, null, 'A product used for the service no longer exists.', 404);
-        if ($p['is_service']) respond(false, null, '"' . $p['name'] . '" is a service. Only stock products can be used to provide a service.', 422);
+        $iStmt = $pdo->prepare("SELECT id, name, $descSql, unit, buying_price FROM service_items WHERE id = ?");
+        $iStmt->execute([$m['service_item_id']]);
+        $item = $iStmt->fetch();
+        if (!$item) respond(false, null, 'An item used for the service no longer exists in Service Purchases stock.', 404);
 
-        $cStmt = $pdo->prepare('SELECT COUNT(*) FROM product_variants WHERE product_id = ?');
-        $cStmt->execute([$m['product_id']]);
-        $hasVariants = (int)$cStmt->fetchColumn() > 0;
-
-        $name = $p['name'];
-        $unit = $p['unit'];
-        $unitCost = (float)$p['buying_price'];
-        $variantId = null;
-        if ($hasVariants) {
-            if (!$m['variant_id']) respond(false, null, 'Select a description for "' . $p['name'] . '" in the products used.', 422);
-            $vStmt = $pdo->prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?');
-            $vStmt->execute([$m['variant_id'], $m['product_id']]);
-            $v = $vStmt->fetch();
-            if (!$v) respond(false, null, 'That description of "' . $p['name'] . '" no longer exists.', 404);
-            $variantId = (int)$v['id'];
-            $name = $p['name'] . ' — ' . $v['variant_name'];
-            $unit = $v['unit'];
-            $unitCost = (float)$v['buying_price'];
-        }
-
+        $unitCost = (float)$item['buying_price'];
         $usedTotal = $m['quantity'] * $saleQty;
         $lineCost = round($usedTotal * $unitCost, 2);
         $perUnitCost += $m['quantity'] * $unitCost;
         $totalCost += $lineCost;
         $out['materials'][] = [
-            'material_product_id' => (int)$p['id'],
-            'material_variant_id' => $variantId,
-            'name' => $name,
-            'unit' => $unit,
+            'service_item_id' => (int)$item['id'],
+            'material_product_id' => null,
+            'material_variant_id' => null,
+            // Name + description (e.g. "Pen — Obama Pen"), so the sale shows exactly which item was used.
+            'name' => trim((string)$item['description']) !== '' ? $item['name'] . ' — ' . trim($item['description']) : $item['name'],
+            'unit' => $item['unit'],
             'quantity' => $usedTotal,
             'unit_cost' => $unitCost,
             'total_cost' => $lineCost,
@@ -117,106 +141,105 @@ function sm_build_line_materials(PDO $pdo, array $requested, int $saleQty): arra
     return $out;
 }
 
-/** The products used by each sale line, for showing/editing a saved sale. quantity = per 1 service. */
+/**
+ * The items used by each sale line, for showing/editing a saved sale. quantity = per 1 service.
+ * Rows with a service_item_id came from Service Purchases stock; rows without one are older
+ * sales that used product stock (flagged legacy = true).
+ */
 function sm_materials_for_sale_items(PDO $pdo, array $items): array
 {
     if (!$items || !sm_feature_ready($pdo)) return $items;
-    $stmt = $pdo->prepare('SELECT material_product_id, material_variant_id, material_name, quantity FROM sale_item_materials WHERE sale_item_id = ? ORDER BY id ASC');
+    $hasService = sm_service_stock_ready($pdo);
+    $select = 'material_product_id, material_variant_id, material_name, quantity' . ($hasService ? ', service_item_id' : '');
+    $stmt = $pdo->prepare("SELECT $select FROM sale_item_materials WHERE sale_item_id = ? ORDER BY id ASC");
     foreach ($items as &$it) {
         $stmt->execute([$it['id']]);
         $qty = max(1, (int)$it['quantity']);
-        $it['materials'] = array_map(fn($m) => [
-            'product_id' => $m['material_product_id'] ? (int)$m['material_product_id'] : null,
-            'variant_id' => $m['material_variant_id'] ? (int)$m['material_variant_id'] : null,
-            'name' => $m['material_name'],
-            'quantity' => (int)round($m['quantity'] / $qty),
-            'total_quantity' => (int)$m['quantity'],
-        ], $stmt->fetchAll());
+        $it['materials'] = array_map(function ($m) use ($qty) {
+            $sid = !empty($m['service_item_id']) ? (int)$m['service_item_id'] : null;
+            return [
+                'service_item_id' => $sid,
+                'legacy' => $sid === null,
+                'product_id' => $m['material_product_id'] ? (int)$m['material_product_id'] : null,
+                'variant_id' => $m['material_variant_id'] ? (int)$m['material_variant_id'] : null,
+                'name' => $m['material_name'],
+                'quantity' => (int)round($m['quantity'] / $qty),
+                'total_quantity' => (int)$m['quantity'],
+            ];
+        }, $stmt->fetchAll());
     }
     unset($it);
     return $items;
 }
 
 /**
- * Inside an open transaction: make sure the whole sale can be served from stock, and
- * lock the stock rows involved. Looks at service materials AND ordinary product lines
- * of the same sale together (so "1 Manila sold directly + 1 Manila binding" is counted
- * as 2). Returns an error message, or null if everything is fine.
+ * Inside an open transaction: make sure the whole sale can be served from SERVICE stock, and
+ * lock the service stock rows involved. Several service lines of the same sale that use the
+ * same item are counted together. Returns an error message, or null if everything is fine.
  *
- * Only runs checks for stock rows that some service in this sale actually uses, so a
- * sale without any material-using service behaves exactly as before.
+ * Product stock is never looked at here: services do not draw from it any more.
  */
 function sm_lock_and_check_stock(PDO $pdo, array $items): ?string
 {
-    $watch = [];   // key => ['pid','vid','name','need','services'=>[labels]]
+    $watch = [];   // service_item_id => ['name', 'need', 'services' => [labels]]
     foreach ($items as $it) {
         if (empty($it['materials'])) continue;
         foreach ($it['materials'] as $m) {
-            $k = sm_stock_key($m['material_product_id'], $m['material_variant_id']);
-            if (!isset($watch[$k])) {
-                $watch[$k] = ['pid' => $m['material_product_id'], 'vid' => $m['material_variant_id'], 'name' => $m['name'], 'need' => 0, 'services' => []];
-            }
+            if (empty($m['service_item_id'])) continue;
+            $k = (int)$m['service_item_id'];
+            if (!isset($watch[$k])) $watch[$k] = ['name' => $m['name'], 'need' => 0, 'services' => []];
             $watch[$k]['need'] += (int)$m['quantity'];
             $watch[$k]['services'][$it['label']] = true;
         }
     }
     if (!$watch) return null;
 
-    // Add ordinary product lines that draw from the same stock rows.
-    foreach ($items as $it) {
-        if ($it['product']['is_service']) continue;
-        $k = sm_stock_key($it['product_id'], $it['variant_id']);
-        if (isset($watch[$k])) $watch[$k]['need'] += (int)$it['quantity'];
-    }
-
-    foreach ($watch as $w) {
-        if ($w['vid']) {
-            $s = $pdo->prepare('SELECT stock_quantity, unit FROM product_variants WHERE id = ? FOR UPDATE');
-            $s->execute([$w['vid']]);
-        } else {
-            $s = $pdo->prepare('SELECT stock_quantity, unit FROM products WHERE id = ? FOR UPDATE');
-            $s->execute([$w['pid']]);
-        }
+    foreach ($watch as $id => $w) {
+        $s = $pdo->prepare('SELECT stock_quantity, unit FROM service_items WHERE id = ? FOR UPDATE');
+        $s->execute([$id]);
         $row = $s->fetch();
-        if (!$row) return 'A product used by "' . implode('", "', array_keys($w['services'])) . '" no longer exists. Please update that service\'s products.';
+        if (!$row) return 'An item used by "' . implode('", "', array_keys($w['services'])) . '" no longer exists in Service Purchases stock.';
         if ((int)$row['stock_quantity'] < $w['need']) {
-            return 'Not enough stock of "' . $w['name'] . '" to provide "' . implode('", "', array_keys($w['services'])) . '". '
-                . 'This sale needs ' . $w['need'] . ' ' . $row['unit'] . ' but only ' . (int)$row['stock_quantity'] . ' ' . $row['unit'] . ' left.';
+            return 'Not enough service stock of "' . $w['name'] . '" to provide "' . implode('", "', array_keys($w['services'])) . '". '
+                . 'This sale needs ' . $w['need'] . ' ' . $row['unit'] . ' but only ' . (int)$row['stock_quantity'] . ' ' . $row['unit']
+                . ' left. Record a Service Purchase to add stock.';
         }
     }
     return null;
 }
 
 /**
- * Inside an open transaction: take the materials of one saved sale line out of stock
+ * Inside an open transaction: take the items used by one saved sale line out of SERVICE stock
  * and store the snapshot (quantity + cost at the time of sale).
  */
 function sm_deduct_and_record(PDO $pdo, int $saleItemId, array $materials): void
 {
     if (!$materials) return;
-    $ins = $pdo->prepare('INSERT INTO sale_item_materials (sale_item_id, material_product_id, material_variant_id, material_name, quantity, unit_cost, total_cost) VALUES (?,?,?,?,?,?,?)');
+    $ins = $pdo->prepare('INSERT INTO sale_item_materials (sale_item_id, service_item_id, material_product_id, material_variant_id, material_name, quantity, unit_cost, total_cost) VALUES (?,?,?,?,?,?,?,?)');
     foreach ($materials as $m) {
-        if ($m['material_variant_id']) {
-            $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$m['quantity'], $m['material_variant_id']]);
-        } else {
-            $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?')->execute([$m['quantity'], $m['material_product_id']]);
-        }
-        $ins->execute([$saleItemId, $m['material_product_id'], $m['material_variant_id'], $m['name'], $m['quantity'], $m['unit_cost'], $m['total_cost']]);
+        $pdo->prepare('UPDATE service_items SET stock_quantity = stock_quantity - ?, updated_at = NOW() WHERE id = ?')->execute([$m['quantity'], $m['service_item_id']]);
+        $ins->execute([$saleItemId, $m['service_item_id'], null, null, $m['name'], $m['quantity'], $m['unit_cost'], $m['total_cost']]);
     }
 }
 
 /**
- * Inside an open transaction: give back the materials that the given sale lines consumed.
- * Call this BEFORE the sale_items rows are deleted (the snapshot is removed with them).
+ * Inside an open transaction: give back the items that the given sale lines consumed.
+ * Service-stock rows go back to SERVICE stock; older rows (no service_item_id) go back to the
+ * PRODUCT stock they were taken from. Call this BEFORE the sale_items rows are deleted
+ * (the snapshot is removed with them).
  */
 function sm_restore_for_items(PDO $pdo, array $saleItemIds): void
 {
     if (!$saleItemIds || !sm_feature_ready($pdo)) return;
+    $hasService = sm_service_stock_ready($pdo);
     $in = implode(',', array_fill(0, count($saleItemIds), '?'));
-    $stmt = $pdo->prepare("SELECT material_product_id, material_variant_id, quantity FROM sale_item_materials WHERE sale_item_id IN ($in)");
+    $select = 'material_product_id, material_variant_id, quantity' . ($hasService ? ', service_item_id' : '');
+    $stmt = $pdo->prepare("SELECT $select FROM sale_item_materials WHERE sale_item_id IN ($in)");
     $stmt->execute(array_values($saleItemIds));
     foreach ($stmt->fetchAll() as $m) {
-        if (!empty($m['material_variant_id'])) {
+        if (!empty($m['service_item_id'])) {
+            $pdo->prepare('UPDATE service_items SET stock_quantity = stock_quantity + ?, updated_at = NOW() WHERE id = ?')->execute([$m['quantity'], $m['service_item_id']]);
+        } elseif (!empty($m['material_variant_id'])) {
             $pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$m['quantity'], $m['material_variant_id']]);
         } elseif (!empty($m['material_product_id'])) {
             $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$m['quantity'], $m['material_product_id']]);

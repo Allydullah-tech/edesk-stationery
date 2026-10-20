@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Africa/Dar_es_Salaam'); // keep PHP's clock on East Africa time (see db.php)
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 

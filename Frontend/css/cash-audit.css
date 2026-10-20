@@ -1,7 +1,7 @@
 /* =========================================================
    EDESK STATIONERY — Cash Audit
    (Daily Cash Closing & Sales Reconciliation Sheet)
-   Used by js/cash-audit.js on the Sales page.
+   Used by js/cash-audit.js on the Cash Audit page (cash-audit.html).
    ========================================================= */
 
 /* ---------- Modal shell ---------- */
@@ -12,6 +12,22 @@
 .ca-status.error{color:var(--red);font-weight:600;}
 .ca-scroll{overflow-x:auto;}
 .ca-note{font-size:11.5px;color:var(--muted);margin:12px 0 0;}
+
+/* ---------- Cash Audit page (the sheet sits in a card on its own page) ---------- */
+.ca-page{background:#fff;border:1px solid var(--line);border-radius:12px;}
+.ca-page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line);}
+.ca-page-head h3{margin:0;font-size:16px;}
+.ca-page-body{padding:16px 18px 22px;}
+@media (max-width:640px){
+  .ca-page-head{padding:12px;}
+  .ca-page-body{padding:12px 8px 18px;}
+  .ca-page-head .ca-head-actions{flex-wrap:wrap;}
+}
+
+/* Short / Over line and the Hand + Online breakdown in History */
+.ca-sheet .ca-short{color:#B42318 !important;}
+.ca-sheet .ca-over{color:#1A7F37 !important;}
+.ca-sub-amt{font-size:11px;color:var(--muted);white-space:nowrap;}
 
 /* ---------- The sheet itself (same markup on screen and in print) ---------- */
 .ca-sheet{
@@ -85,6 +101,14 @@
 .cf-strike{text-decoration:line-through;opacity:.6;}
 .cf-empty{margin:0 0 6px;}
 .cf-form{border-top:1px solid #EEF0F5;margin-top:10px;padding-top:12px;}
+.cf-iconbtn{width:28px;height:28px;min-height:0;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;}
+.cf-iconbtn .ui-icon{width:14px;height:14px;margin:0;vertical-align:0;}
+.cf-list .cf-iconbtn:first-of-type{margin-left:auto;}
+.cf-list .cf-iconbtn + .cf-iconbtn{margin-left:0;}
+.cf-editing{background:#FDF3E3;}
+.cf-iconbtn.cf-danger:hover{border-color:var(--red);color:var(--red);}
+.cf-deleted-row td{background:#FAFAFB;}
+.cf-trail{font-size:11px;margin-top:2px;}
 @media (max-width:520px){.cf-grid{grid-template-columns:repeat(2,1fr);}}
 
 /* ---------- History modal (list of saved sheets) ---------- */
@@ -209,3 +233,12 @@
   /* A longer sheet may run to a second page - keep each block whole rather than splitting it. */
   #cashAuditPrint .ca-table tr{page-break-inside:avoid;}
 }
+
+
+/* Bank Deposit: deposit date, receipt photo and receipt viewer */
+.bd-rcpt-prev{display:flex;align-items:center;gap:12px;margin-top:8px;padding:8px;border:1px solid #EEF0F5;border-radius:10px;background:var(--bg, #F5F6FA);}
+.bd-rcpt-prev img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #E1E5EE;flex:none;}
+.bd-rcpt-prev .bd-rcpt-meta{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:12px;color:var(--muted);}
+.bd-rcpt-prev .bd-rcpt-meta b{color:inherit;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bd-rcpt-view img{max-width:100%;max-height:68vh;display:block;margin:0 auto;border-radius:8px;border:1px solid #E1E5EE;}
+.bd-rcpt-view .ca-note{text-align:center;}
