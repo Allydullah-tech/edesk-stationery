@@ -226,8 +226,30 @@ document.addEventListener('click', (e) => {
 
 // --------- Register service worker for offline/installable support ---------
 if ('serviceWorker' in navigator) {
+  // When a new version of the app takes over, reload once so the user sees
+  // the latest files automatically (no manual refresh / clearing data).
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    navigator.serviceWorker
+      .register('service-worker.js', { updateViaCache: 'none' })
+      .then((reg) => {
+        const checkForUpdate = () => reg.update().catch(() => {});
+        checkForUpdate();
+        // Installed PWAs stay open in the background - re-check when reopened
+        // or brought back to the foreground, and every 10 minutes.
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkForUpdate();
+        });
+        setInterval(checkForUpdate, 10 * 60 * 1000);
+      })
+      .catch(() => {});
   });
 }
 

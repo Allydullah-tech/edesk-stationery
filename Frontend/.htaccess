@@ -1,0 +1,13 @@
+# Always let the browser re-check pages/scripts/styles with the server,
+# so new updates appear without clearing browsing data.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|css|json)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "^service-worker\.js$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    </FilesMatch>
+</IfModule>
+<IfModule mod_expires.c>
+    ExpiresActive Off
+</IfModule>

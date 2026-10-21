@@ -6,7 +6,7 @@
  * the cache is only used as a fallback when there is no connection.
  * Data (API calls) always goes straight to the network, never cached.
  */
-const CACHE_NAME = 'edesk-stationery-v20';
+const CACHE_NAME = 'edesk-stationery-v21';
 const SHELL_FILES = [
   './index.html',
   './login.html',
@@ -88,7 +88,9 @@ self.addEventListener('fetch', (event) => {
   // Fall back to the cached copy only if the network request fails
   // (e.g. no internet connection), so the app still opens offline.
   event.respondWith(
-    fetch(event.request)
+    // cache:'no-cache' forces the browser to re-check with the server instead of
+    // reusing its own HTTP-cached copy (this was why updates didn't show up).
+    fetch(event.request, { cache: 'no-cache' })
       .then((response) => {
         if (response && response.ok) {
           const clone = response.clone();
