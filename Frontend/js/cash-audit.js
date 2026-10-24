@@ -1552,7 +1552,7 @@
       <table class="ca-table ca-bank">
         <colgroup><col class="c1"><col class="c2"></colgroup>
         <tr class="ca-th"><td class="ca-l">Item</td><td>Amount</td></tr>
-        <tr><td>Total Cash <i>(cash counted in Part A)</i></td><td class="ca-r" data-out="bTotal">${money(c.counted)}</td></tr>
+        <tr><td>Total Cash <i>(cash in Hand counted in Part A)</i></td><td class="ca-r" data-out="bTotal">${money(c.counted)}</td></tr>
         <tr><td>Bank Deposit</td><td class="ca-r" data-out="bDeposit">${money(c.deposit)}</td></tr>
         <tr><td>Remaining Cash <i>(Total Cash − Bank Deposit)</i></td><td class="ca-r ca-strong" data-out="bRemaining">${money(c.remaining)}</td></tr>
         <tr><td colspan="2" class="ca-mini-box"><span class="ca-lbl">Bank Deposit Remark:</span> <span class="ca-remarks-print" data-html="bankRemark">${bankRemarkHTML(ctx)}</span></td></tr>
