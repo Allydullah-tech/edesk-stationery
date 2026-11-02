@@ -4,6 +4,7 @@ require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/report_helper.php';
 require_once __DIR__ . '/../helpers/access_helper.php';
 require_once __DIR__ . '/../helpers/low_stock_helper.php';
+require_once __DIR__ . '/../helpers/credit_payment_helper.php';
 
 $user = require_login();
 $pdo = get_db();
@@ -42,8 +43,12 @@ $monthReport = build_report($pdo, $mStart, $mEnd);
 // the payment_method column) - the dashboard should still load either way.
 $creditToday = ['total_credit' => 0, 'credit_count' => 0];
 try {
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(total_amount), 0) AS total_credit, COUNT(*) AS credit_count
-                            FROM sale_transactions WHERE payment_method = 'credit' AND sale_date = ?");
+    // Only the unpaid part counts as credit: whatever the customer paid at the time of the sale is not owed.
+    $initialCol = dp_initial_ready($pdo)
+        ? "COALESCE((SELECT SUM(ip.amount) FROM debt_payments ip WHERE ip.sale_id = st.id AND ip.is_initial = 1), 0)"
+        : '0';
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(GREATEST(st.total_amount - {$initialCol}, 0)), 0) AS total_credit, COUNT(*) AS credit_count
+                            FROM sale_transactions st WHERE st.payment_method = 'credit' AND st.sale_date = ?");
     $stmt->execute([$today]);
     $creditToday = $stmt->fetch();
 } catch (Exception $e) {

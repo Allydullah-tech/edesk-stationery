@@ -16,6 +16,7 @@ async function requireAuth(allowedRoles = ['admin', 'worker']) {
     paintUserChip();
     applyRoleVisibility();
     showFlashMessage();
+    document.dispatchEvent(new Event('edesk:authready')); // lets the mobile orbit navigation build with the right pages
     return CURRENT_USER;
 }
 

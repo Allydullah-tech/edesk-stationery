@@ -6,6 +6,7 @@ require_once __DIR__ . '/../helpers/customer_helper.php';
 require_once __DIR__ . '/../helpers/change_helper.php';
 require_once __DIR__ . '/../helpers/service_material_helper.php';
 require_once __DIR__ . '/../helpers/access_helper.php';
+require_once __DIR__ . '/../helpers/credit_payment_helper.php';
 
 $user = require_role(['admin', 'worker']);
 $pdo = get_db();
@@ -109,6 +110,16 @@ if ($method === 'GET') {
         $itemsStmt->execute([$txn['id']]);
         $txn['items'] = $itemsStmt->fetchAll();
 
+        // Credit sales: what the customer paid at the time of the sale, and what has been paid in total since.
+        if ($txn['payment_method'] === 'credit') {
+            $ipStmt = $pdo->prepare('SELECT ' . dp_initial_select_sql($pdo, 'st') . ' FROM sale_transactions st WHERE st.id = ?');
+            $ipStmt->execute([$txn['id']]);
+            $txn = array_merge($txn, $ipStmt->fetch() ?: []);
+            $tpStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM debt_payments WHERE sale_id = ?');
+            $tpStmt->execute([$txn['id']]);
+            $txn['total_paid'] = dp_money($tpStmt->fetchColumn());
+        }
+
         // Customer change (money the shop owes the customer) - kept on this same sale record:
         // the original amount, every collection so far, what is left, and the status.
         if (change_feature_ready($pdo)) {
@@ -141,8 +152,9 @@ if ($method === 'GET') {
     // can show "Notebook, Pen — Obama Pen (3 items)" without a second
     // query per row.
     $changeSelect = change_feature_ready($pdo) ? ', ' . change_select_sql('st') : '';
+    $initialSelect = dp_initial_select_sql($pdo, 'st'); // paid at the time of a credit sale (0 for other sales)
     $stmt = $pdo->prepare("
-        SELECT st.*, u.full_name AS sold_by_name{$changeSelect},
+        SELECT st.*, u.full_name AS sold_by_name{$changeSelect}, {$initialSelect},
                (SELECT GROUP_CONCAT(CASE WHEN pv.id IS NOT NULL THEN CONCAT(p.name, ' — ', pv.variant_name) ELSE p.name END SEPARATOR ', ')
                 FROM sale_items si JOIN products p ON p.id = si.product_id LEFT JOIN product_variants pv ON pv.id = si.variant_id
                 WHERE si.transaction_id = st.id) AS item_names,
@@ -278,6 +290,27 @@ if ($method === 'POST') {
         $creditDeadline = clean($d['credit_deadline']);
     }
 
+    // ---- Credit sale: optional "Amount Paid Now" -------------------------------------------------
+    // Remaining Debt = Total Sale Amount - Amount Paid Now. The part paid now is saved below as a
+    // normal debt_payments row (cash or online, exactly like any later repayment).
+    $paidNow = 0.0; $initMethod = 'cash_in_hand'; $initOnline = null;
+    if ($paymentMethod === 'credit') {
+        $paidNow = dp_money($d['amount_paid_now'] ?? 0);
+        if ($paidNow < 0) respond(false, null, 'Amount paid now cannot be negative.', 422);
+        if ($paidNow > $totalAmount + 0.009) {
+            respond(false, null, 'Amount paid now (TZS ' . number_format($paidNow) . ') cannot be more than the total sale amount of TZS ' . number_format($totalAmount) . '.', 422);
+        }
+        if ($paidNow > $totalAmount) $paidNow = $totalAmount;
+        if ($paidNow > 0) {
+            $initMethod = (($d['initial_method'] ?? '') === 'online') ? 'online' : 'cash_in_hand';
+            if ($initMethod === 'online') {
+                $initOnline = mb_substr(clean($d['initial_online_method'] ?? ''), 0, 50);
+                if ($initOnline === '') respond(false, null, 'Choose how the customer paid online (M-Pesa, bank, etc.).', 422);
+            }
+        }
+    }
+    $remainingDebt = max(dp_money($totalAmount - $paidNow), 0);
+
     // Customer change left behind (money the shop owes the customer). Only for cash-in-hand sales.
     $changeAmount = chg_money($d['change_amount'] ?? 0);
     if ($changeAmount < 0) respond(false, null, 'Customer change cannot be negative.', 422);
@@ -294,8 +327,14 @@ if ($method === 'POST') {
     // customer record at all (see resolve_customer()).
     $customerId = ($customerName !== '' || $customerPhone !== '') ? resolve_customer($pdo, $customerName, $customerPhone) : null;
 
-    if ($paymentMethod === 'credit') {
+    // A restricted customer cannot take NEW debt; a sale paid in full on the spot creates none.
+    if ($paymentMethod === 'credit' && $remainingDebt > 0.009) {
         block_if_credit_restricted($pdo, $customerId); // exits with a clear error if blocked
+    }
+
+    // The flag column is added before the transaction starts (MySQL commits implicitly on ALTER).
+    if ($paidNow > 0 && !dp_initial_ready($pdo, true)) {
+        respond(false, null, 'Could not prepare the database for initial payments. Please run Backend/upgrade_v14_initial_payment.php once.', 500);
     }
 
     try {
@@ -335,6 +374,14 @@ if ($method === 'POST') {
             }
         }
 
+        // The part paid now: ONE debt_payments row, written in the same transaction as the sale, so
+        // a sale can never exist without its payment (or the payment without its sale).
+        if ($paymentMethod === 'credit' && $paidNow > 0) {
+            $pdo->prepare('INSERT INTO debt_payments (sale_id, amount, method, online_method, payment_date, note, is_initial, recorded_by, created_at)
+                           VALUES (?,?,?,?,?,?,1,?,NOW())')
+                ->execute([$txnId, $paidNow, $initMethod, $initOnline, $saleDate, 'Initial payment at time of sale', $user['id']]);
+        }
+
         $pdo->commit();
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -349,10 +396,22 @@ if ($method === 'POST') {
     log_activity($pdo, $user, 'create', 'sale', $txnId,
         'Recorded a ' . $paymentMethod . ' sale: ' . $itemSummary . ' for TZS ' . number_format($totalAmount)
         . ($customerName !== '' ? ' to ' . $customerName : '')
+        . ($paymentMethod === 'credit' && $paidNow > 0
+            ? ', TZS ' . number_format($paidNow) . ' paid now (' . ($initMethod === 'online' ? 'online' . ($initOnline ? ' - ' . $initOnline : '') : 'cash') . '), TZS ' . number_format($remainingDebt) . ' left as debt'
+            : '')
         . ($changeAmount > 0 ? ', customer left TZS ' . number_format($changeAmount) . ' change' : ''));
 
-    $created = ['id' => $txnId, 'total_amount' => $totalAmount, 'profit' => $totalProfit, 'change_amount' => $changeAmount];
-    respond(true, is_admin_user($user) ? $created : hide_fields($created, ['profit']), 'Sale recorded successfully.');
+    $created = ['id' => $txnId, 'total_amount' => $totalAmount, 'profit' => $totalProfit, 'change_amount' => $changeAmount,
+                'amount_paid_now' => $paidNow, 'remaining_debt' => $paymentMethod === 'credit' ? $remainingDebt : 0];
+    $saveMsg = 'Sale recorded successfully.';
+    if ($paymentMethod === 'credit') {
+        $saveMsg = $remainingDebt <= 0.009
+            ? 'Sale recorded and paid in full. No debt created.'
+            : ($paidNow > 0
+                ? 'Credit sale recorded. TZS ' . number_format($paidNow) . ' paid now, TZS ' . number_format($remainingDebt) . ' left as debt.'
+                : 'Credit sale recorded. TZS ' . number_format($remainingDebt) . ' recorded as debt.');
+    }
+    respond(true, is_admin_user($user) ? $created : hide_fields($created, ['profit']), $saveMsg);
 }
 
 if ($method === 'PUT') {
@@ -420,6 +479,19 @@ if ($method === 'PUT') {
         if ($customerName === '') respond(false, null, 'Please enter the customer\'s name so the change can be given to the right person.', 422);
     }
 
+    // Money already received against this sale (the initial payment and any later repayments) must stay consistent.
+    $paidSoFarStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM debt_payments WHERE sale_id = ?');
+    $paidSoFarStmt->execute([$txnId]);
+    $paidSoFar = dp_money($paidSoFarStmt->fetchColumn());
+    if ($paidSoFar > 0.009) {
+        if ($paymentMethod !== 'credit') {
+            respond(false, null, 'This sale already has TZS ' . number_format($paidSoFar) . ' in payments recorded against it. Delete those payments on the Debts page before changing it to a cash sale.', 422);
+        }
+        if ($totalAmount + 0.009 < $paidSoFar) {
+            respond(false, null, 'The sale total cannot be lower than the TZS ' . number_format($paidSoFar) . ' already paid on it.', 422);
+        }
+    }
+
     try {
         $pdo->beginTransaction();
 
@@ -477,6 +549,10 @@ if ($method === 'PUT') {
             ]);
         if (change_feature_ready($pdo) && $changeAmount != $existingChange) {
             $pdo->prepare('UPDATE sale_transactions SET change_amount = ? WHERE id = ?')->execute([$changeAmount, $txnId]);
+        }
+        // The payment made at the time of the sale always carries the sale's date.
+        if (!empty($d['sale_date']) && clean($d['sale_date']) !== $existing['sale_date'] && dp_initial_ready($pdo)) {
+            $pdo->prepare('UPDATE debt_payments SET payment_date = ? WHERE sale_id = ? AND is_initial = 1')->execute([clean($d['sale_date']), $txnId]);
         }
 
         $pdo->commit();

@@ -25,6 +25,8 @@ let HELD_SERVICE = {};        // while EDITING a sale: SERVICE stock that sale a
 
     document.getElementById('s-payment-method').addEventListener('change', updatePaymentFieldsVisibility);
     document.getElementById('s-cash-type').addEventListener('change', updatePaymentFieldsVisibility);
+    document.getElementById('s-paid-now').addEventListener('input', updatePaidNowSummary);
+    document.getElementById('s-paid-now-method').addEventListener('change', updatePaidNowSummary);
     document.getElementById('s-change-left').addEventListener('change', updateChangeFieldVisibility);
 
     setupProductSearch();
@@ -335,6 +337,7 @@ function renderCart() {
     }
     const grandTotal = CART.reduce((sum, c) => sum + c.subtotal, 0);
     document.getElementById('cart-grand-total').textContent = money(grandTotal);
+    if (typeof updatePaidNowSummary === 'function') updatePaidNowSummary();
 }
 
 /* =========================================================
@@ -353,6 +356,12 @@ function updatePaymentFieldsVisibility() {
     document.getElementById('s-customer-phone').required = method === 'credit';
     document.getElementById('s-restriction-error').textContent = '';
 
+    // "Amount Paid Now" belongs to NEW credit sales only; later payments are recorded on the Debts page.
+    const paidNowAllowed = method === 'credit' && !EDITING_SALE_ID;
+    document.getElementById('paidNowBox').classList.toggle('hidden', !paidNowAllowed);
+    if (!paidNowAllowed) document.getElementById('s-paid-now').value = '';
+    updatePaidNowSummary();
+
     // Customer change only makes sense when the customer paid cash in hand (the extra money is in the drawer).
     const changeAllowed = method === 'cash' && cashType === 'cash_in_hand';
     document.getElementById('customerChangeBox').classList.toggle('hidden', !changeAllowed);
@@ -361,6 +370,30 @@ function updatePaymentFieldsVisibility() {
         document.getElementById('s-change-amount').value = '';
     }
     updateChangeFieldVisibility();
+}
+
+/** Cart total, as a number (the same figure shown as Grand Total). */
+function currentCartTotal() {
+    return CART.reduce((sum, c) => sum + c.subtotal, 0);
+}
+
+/** Total Sale - Amount Paid Now = Remaining Debt, plus the payment-method choice once something is paid now. */
+function updatePaidNowSummary() {
+    const box = document.getElementById('paidNowBox');
+    if (!box || box.classList.contains('hidden')) return;
+    const total = currentCartTotal();
+    const raw = parseFloat(document.getElementById('s-paid-now').value);
+    const paid = isNaN(raw) || raw < 0 ? 0 : raw;
+    const err = document.getElementById('s-paid-now-error');
+    err.textContent = paid > total + 0.009 ? 'Amount paid now cannot be more than the total sale amount (' + money(total) + ').' : '';
+    const shown = Math.min(paid, total);
+    document.getElementById('pn-total').textContent = money(total);
+    document.getElementById('pn-paid').textContent = money(shown);
+    document.getElementById('pn-remaining').textContent = money(Math.max(total - shown, 0));
+    const method = document.getElementById('s-paid-now-method').value;
+    document.getElementById('paidNowMethodBox').classList.toggle('hidden', !(paid > 0));
+    document.getElementById('paidNowOnlineField').classList.toggle('hidden', method !== 'online');
+    document.getElementById('s-paid-now').max = String(total);
 }
 
 function updateChangeFieldVisibility() {
@@ -402,7 +435,8 @@ async function loadSales() {
     res.data.forEach(s => {
         totalSales += Number(s.total_amount);
         totalProfit += Number(s.total_profit);
-        if (s.payment_method === 'credit') totalCredit += Number(s.total_amount);
+        // Only the unpaid part of a credit sale is "on credit" (what the customer paid at the time of the sale is not owed).
+        if (s.payment_method === 'credit') totalCredit += Math.max(Number(s.total_amount) - (Number(s.initial_paid) || 0), 0);
         changeOwed += Number(s.change_remaining) || 0;
     });
     document.getElementById('s-change-owed').textContent = money(changeOwed);
@@ -469,7 +503,14 @@ function saleItemLines(s) {
 }
 
 function paymentTag(s) {
-  if (s.payment_method === 'credit') return '<span class="tag tag-red">Credit</span>';
+  if (s.payment_method === 'credit') {
+    const paid = Number(s.initial_paid) || 0;
+    if (paid <= 0) return '<span class="tag tag-red">Credit</span>';
+    const via = s.initial_method === 'online' ? (s.initial_online_method || 'Online') : 'Cash';
+    const left = Math.max(Number(s.total_amount) - paid, 0);
+    return `<span class="tag ${left <= 0.009 ? 'tag-green' : 'tag-red'}">${left <= 0.009 ? 'Credit - paid in full' : 'Credit'}</span>` +
+      `<div class="muted" style="font-size:11.5px;margin-top:3px;">Paid now ${money(paid)} (${via})${left > 0.009 ? '<br>Debt ' + money(left) : ''}</div>`;
+  }
   if (s.cash_type === 'online') return `<span class="tag tag-green">${s.online_method || 'Online'}</span>`;
   return '<span class="tag tag-gray">Cash</span>';
 }
@@ -599,6 +640,15 @@ document.getElementById('saleForm').addEventListener('submit', async (e) => {
   if (paymentMethod === 'credit' && !customerPhone) { toast("Please enter the customer's phone number for a credit sale.", 'error'); return; }
   if (paymentMethod === 'credit' && !document.getElementById('s-credit-deadline').value) { toast('Please set a payment deadline for this credit sale.', 'error'); return; }
 
+  // Credit sale: optional amount paid now (new sales only).
+  let paidNow = 0;
+  if (paymentMethod === 'credit' && !EDITING_SALE_ID) {
+    const raw = document.getElementById('s-paid-now').value.trim();
+    paidNow = raw === '' ? 0 : parseFloat(raw);
+    if (isNaN(paidNow) || paidNow < 0) { toast('Enter a valid amount for Amount Paid Now, or leave it empty.', 'error'); return; }
+    if (paidNow > currentCartTotal() + 0.009) { toast('Amount paid now cannot be more than the total sale amount.', 'error'); return; }
+  }
+
   // Customer change left on this sale (cash in hand only - the section is hidden otherwise).
   const changeOn = document.getElementById('s-change-left').checked;
   let changeAmount = 0;
@@ -619,6 +669,13 @@ document.getElementById('saleForm').addEventListener('submit', async (e) => {
     online_method: document.getElementById('s-online-method').value,
     credit_deadline: document.getElementById('s-credit-deadline').value,
   };
+  if (paymentMethod === 'credit' && !EDITING_SALE_ID) {
+    payload.amount_paid_now = paidNow;
+    if (paidNow > 0) {
+      payload.initial_method = document.getElementById('s-paid-now-method').value;
+      payload.initial_online_method = document.getElementById('s-paid-now-online').value;
+    }
+  }
 
   const res = EDITING_SALE_ID
     ? await API.put('sales.php', { id: EDITING_SALE_ID, ...payload })

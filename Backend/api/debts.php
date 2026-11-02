@@ -3,14 +3,17 @@ require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers/functions.php';
 require_once __DIR__ . '/../helpers/audit_helper.php';
 require_once __DIR__ . '/../helpers/customer_helper.php';
+require_once __DIR__ . '/../helpers/credit_payment_helper.php';
 
 $user = require_role(['admin', 'worker']);
 $pdo = get_db();
 $method = $_SERVER['REQUEST_METHOD'];
 
 function debt_base_query(): string {
+    global $pdo;
+    $initialSelect = dp_initial_select_sql($pdo, 's');
     return "SELECT s.id, s.sale_date, s.credit_deadline, s.customer_id, s.customer_name, s.customer_phone, s.total_amount,
-                   u.full_name AS sold_by_name,
+                   u.full_name AS sold_by_name, {$initialSelect},
                    (SELECT GROUP_CONCAT(p.name SEPARATOR ', ') FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.transaction_id = s.id) AS item_names,
                    COALESCE((SELECT SUM(dp.amount) FROM debt_payments dp WHERE dp.sale_id = s.id), 0) AS paid_amount
             FROM sale_transactions s
@@ -22,16 +25,17 @@ if ($method === 'GET' && !empty($_GET['history'])) {
     // Full payment history for a single debt/credit sale: every payment
     // ever made against it, plus the original amount and remaining balance.
     $saleId = (int)$_GET['history'];
-    $stmt = $pdo->prepare("SELECT s.id, s.sale_date, s.credit_deadline, s.customer_name, s.customer_phone, s.total_amount,
+    $stmt = $pdo->prepare("SELECT s.id, s.sale_date, s.credit_deadline, s.customer_name, s.customer_phone, s.total_amount, " . dp_initial_select_sql($pdo, 's') . ",
                                    (SELECT GROUP_CONCAT(p.name SEPARATOR ', ') FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.transaction_id = s.id) AS item_names
                             FROM sale_transactions s WHERE s.id = ? AND s.payment_method = 'credit'");
     $stmt->execute([$saleId]);
     $sale = $stmt->fetch();
     if (!$sale) respond(false, null, 'Credit sale not found.', 404);
 
-    $pStmt = $pdo->prepare('SELECT dp.id, dp.payment_date, dp.amount, dp.method, dp.online_method, dp.note, u.full_name AS recorded_by_name
+    $isInitialCol = dp_initial_ready($pdo) ? 'dp.is_initial' : '0';
+    $pStmt = $pdo->prepare("SELECT dp.id, dp.payment_date, dp.amount, dp.method, dp.online_method, dp.note, {$isInitialCol} AS is_initial, u.full_name AS recorded_by_name
                              FROM debt_payments dp JOIN users u ON u.id = dp.recorded_by
-                             WHERE dp.sale_id = ? ORDER BY dp.payment_date ASC, dp.id ASC');
+                             WHERE dp.sale_id = ? ORDER BY dp.payment_date ASC, dp.id ASC");
     $pStmt->execute([$saleId]);
     $payments = $pStmt->fetchAll();
 

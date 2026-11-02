@@ -109,7 +109,7 @@ async function loadDebts() {
       <td>${customerCell}</td>
       <td>${d.item_names}</td>
       <td>${money(d.total_amount)}</td>
-      <td class="green">${money(d.paid_amount)}</td>
+      <td class="green">${money(d.paid_amount)}${Number(d.initial_paid) > 0 ? `<div class="muted" style="font-size:11.5px;">incl. ${money(d.initial_paid)} paid at sale (${initialViaLabel(d.initial_method, d.initial_online_method)})</div>` : ''}</td>
       <td class="${remainingClass}"><strong>${money(d.remaining)}</strong></td>
       <td class="${isOverdue ? 'red' : ''}">${d.credit_deadline ? fmtDate(d.credit_deadline) : '—'}${isOverdue ? ' <svg class="ui-icon" style="width:12px;height:12px;"><use href="assets/icons.svg#alert-triangle"></use></svg>' : ''}</td>
       <td>${statusTag(d.status)}</td>
@@ -119,6 +119,10 @@ async function loadDebts() {
       </td>
     </tr>`;
   }).join('');
+}
+
+function initialViaLabel(method, onlineMethod) {
+  return method === 'online' ? (onlineMethod || 'Online') : 'Cash';
 }
 
 function statusTag(status) {
@@ -179,6 +183,13 @@ async function openHistoryModal(saleId) {
 
   const sale = res.data;
   HISTORY_SALE = sale;
+  // Sale details: when it was sold, the deadline, and what the customer paid at the time of the sale.
+  const initPaid = Number(sale.initial_paid) || 0;
+  document.getElementById('historyContext').innerHTML += `<div class="muted" style="font-size:12.5px;margin-top:6px;">` +
+    `Sold ${fmtDate(sale.sale_date)} &middot; Deadline ${sale.credit_deadline ? fmtDate(sale.credit_deadline) : '—'}` +
+    (initPaid > 0
+      ? ` &middot; Paid at sale: <strong class="green">${money(initPaid)}</strong> (${initialViaLabel(sale.initial_method, sale.initial_online_method)})`
+      : ' &middot; Nothing paid at the time of the sale') + `</div>`;
   document.getElementById('hist-original').textContent = money(sale.total_amount);
   document.getElementById('hist-paid').textContent = money(sale.total_paid);
   document.getElementById('hist-remaining').textContent = money(sale.remaining);
@@ -194,7 +205,7 @@ async function openHistoryModal(saleId) {
       <td class="green"><strong>${money(p.amount)}</strong></td>
       <td>${p.method === 'online' ? 'Online' + (p.online_method ? ' (' + p.online_method + ')' : '') : 'Cash'}</td>
       <td>${p.recorded_by_name}</td>
-      <td class="muted">${p.note || '—'}</td>
+      <td class="muted">${Number(p.is_initial) ? '<span class="tag tag-gold">Initial payment</span> ' : ''}${Number(p.is_initial) && p.note === 'Initial payment at time of sale' ? '' : (p.note || (Number(p.is_initial) ? '' : '—'))}</td>
       <td class="admin-only">
         <button class="icon-action-btn edit-btn" title="Edit payment" onclick="openEditPayment(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#edit"></use></svg></button>
         <button class="icon-action-btn delete-btn" title="Delete payment" onclick="deletePayment(${p.id})"><svg class="ui-icon"><use href="assets/icons.svg#trash"></use></svg></button>
@@ -273,7 +284,8 @@ function downloadDebtsExcel() {
   const rows = DEBTS_CACHE.map(d => [
     d.sale_date, d.customer_name || '', d.customer_phone || '', d.item_names, d.total_amount, d.paid_amount, d.remaining,
     d.credit_deadline || '', d.status, d.sold_by_name,
+    Number(d.initial_paid) || 0, Number(d.initial_paid) > 0 ? initialViaLabel(d.initial_method, d.initial_online_method) : '',
   ]);
   exportToExcel('eDESK_Debts_' + todayStr() + '.csv',
-    ['Date', 'Customer', 'Phone', 'Item', 'Total', 'Paid', 'Remaining', 'Deadline', 'Status', 'Sold By'], rows);
+    ['Date', 'Customer', 'Phone', 'Item', 'Total', 'Paid', 'Remaining', 'Deadline', 'Status', 'Sold By', 'Paid At Sale', 'Paid At Sale Via'], rows);
 }

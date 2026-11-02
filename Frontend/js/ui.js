@@ -313,29 +313,134 @@ if ('serviceWorker' in navigator) {
     });
   }
 
-  function buildBottomNav() {
-    if (!document.querySelector('.sidebar') || document.querySelector('.bottom-nav')) return;
-    var items = [
-      ['dashboard.html', 'home', 'Home'],
-      ['sales.html', 'receipt', 'Sales'],
-      ['products.html', 'package', 'Products'],
-      ['purchases.html', 'cart', 'Purchases']
-    ];
-    var page = (location.pathname.split('/').pop() || '').toLowerCase();
-    var nav = document.createElement('nav');
-    nav.className = 'bottom-nav no-print';
-    nav.setAttribute('aria-label', 'Quick navigation');
-    nav.innerHTML = items.map(function (it) {
-      return '<a href="' + it[0] + '"' + (page === it[0] ? ' class="active"' : '') + '>' +
-        '<svg class="ui-icon"><use href="assets/icons.svg#' + it[1] + '"></use></svg><span>' + it[2] + '</span></a>';
-    }).join('') +
-      '<button type="button" class="bn-menu" aria-label="Open menu">' +
-      '<svg class="ui-icon"><use href="assets/icons.svg#menu"></use></svg><span>Menu</span></button>';
-    document.body.appendChild(nav);
-    document.body.classList.add('has-bottom-nav');
-    nav.querySelector('.bn-menu').addEventListener('click', function () {
-      if (typeof toggleSidebar === 'function') toggleSidebar();
+  /* ------------------------------------------------------------------
+     Mobile navigation (phones / tablets <= 880px; desktop keeps the sidebar)
+     A horizontal dock keeps the most-used pages one tap away. The round
+     button in the middle blooms EVERY page into a circle (two rings).
+     Pages are read from the sidebar links, so routes and permissions
+     (admin-only items) always match the sidebar.
+     ------------------------------------------------------------------ */
+  var DOCK_PICKS = ['dashboard.html', 'sales.html', 'products.html', 'debts.html'];
+  var DOCK_LABELS = { 'dashboard.html': 'Home' };
+  var nav = null;
+
+  function navCollect() {
+    var known = (typeof CURRENT_USER !== 'undefined') && CURRENT_USER;
+    var out = [];
+    Array.prototype.forEach.call(document.querySelectorAll('.sidebar a.nav-link:not(.js-logout)'), function (a) {
+      var href = a.getAttribute('href');
+      if (!href || href === '#') return;
+      if (a.closest('.hidden')) return;                  // not allowed for this user
+      if (!known && a.closest('.admin-only')) return;    // role not known yet: never show admin pages early
+      var ic = a.querySelector('.ic');
+      out.push({ href: href, label: a.textContent.replace(/\s+/g, ' ').trim(), icon: ic ? ic.innerHTML : '' });
     });
+    return out;
+  }
+
+  function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+  function buildNav() {
+    if (!document.querySelector('.sidebar') || document.querySelector('.dock')) return;
+
+    var dock = document.createElement('nav');
+    dock.className = 'dock no-print';
+    dock.setAttribute('aria-label', 'Main navigation');
+
+    var menu = document.createElement('div');
+    menu.className = 'radial no-print';
+    menu.setAttribute('aria-hidden', 'true');
+    menu.innerHTML = '<div class="radial-backdrop"></div>' +
+      '<div class="radial-stage"><i class="radial-ring r1"></i><i class="radial-ring r2"></i>' +
+      '<div class="radial-core"><small>You are here</small><b></b></div><div class="radial-items"></div></div>';
+
+    document.body.appendChild(menu);
+    document.body.appendChild(dock);
+    document.body.classList.add('has-bottom-nav');
+    nav = { dock: dock, menu: menu, items: menu.querySelector('.radial-items'), core: menu.querySelector('.radial-core b'), open: false, data: [], ready: false };
+
+    menu.querySelector('.radial-backdrop').addEventListener('click', function () { setMenu(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && nav.open) setMenu(false); });
+    window.addEventListener('pageshow', function () { setMenu(false); });
+    window.addEventListener('resize', function () { if (nav.ready) placeRing(); });
+    menu.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.radial-item')) setMenu(false, true); });
+
+    // Keep the bar out of the way while typing (on-screen keyboard) so it never covers a form.
+    var typing = function (el) {
+      return el && el.matches && el.matches('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]),textarea,select');
+    };
+    document.addEventListener('focusin', function (e) { if (typing(e.target)) document.body.classList.add('nav-hidden'); });
+    document.addEventListener('focusout', function () {
+      setTimeout(function () { if (!typing(document.activeElement)) document.body.classList.remove('nav-hidden'); }, 60);
+    });
+  }
+
+  function setMenu(open, keepState) {
+    if (!nav) return;
+    nav.open = !!open;
+    document.body.classList.toggle('radial-open', nav.open);
+    nav.menu.setAttribute('aria-hidden', String(!nav.open));
+    var hub = nav.dock.querySelector('.dock-hub');
+    if (hub) { hub.setAttribute('aria-expanded', String(nav.open)); hub.setAttribute('aria-label', nav.open ? 'Close all pages' : 'Open all pages'); }
+    Array.prototype.forEach.call(nav.items.children, function (el) { el.tabIndex = nav.open ? 0 : -1; });
+  }
+
+  function populateNav() {
+    if (!nav) return;
+    var data = navCollect();
+    if (!data.length) return;
+    var page = (location.pathname.split('/').pop() || '').toLowerCase();
+    nav.data = data;
+
+    // --- horizontal dock: two important pages, the round button, two more ---
+    var picks = DOCK_PICKS.map(function (h) { return data.filter(function (d) { return d.href === h; })[0]; }).filter(Boolean);
+    function dockLink(it) {
+      var cur = it.href.toLowerCase() === page;
+      return '<a class="dock-link' + (cur ? ' is-current' : '') + '" href="' + it.href + '"' + (cur ? ' aria-current="page"' : '') + '>' +
+        '<span class="ic">' + it.icon + '</span><span class="dl">' + esc(DOCK_LABELS[it.href] || it.label.split(' ')[0]) + '</span></a>';
+    }
+    var hubHtml = '<button type="button" class="dock-hub" aria-expanded="false" aria-label="Open all pages">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="7" r="2.6"/><circle cx="17" cy="7" r="2.6"/><circle cx="7" cy="17" r="2.6"/><circle cx="17" cy="17" r="2.6"/></svg></button>';
+    nav.dock.innerHTML = picks.slice(0, 2).map(dockLink).join('') + hubHtml + picks.slice(2, 4).map(dockLink).join('');
+    nav.dock.querySelector('.dock-hub').addEventListener('click', function () { setMenu(!nav.open); });
+
+    // --- circle with every page ---
+    nav.items.innerHTML = data.map(function (it, i) {
+      var cur = it.href.toLowerCase() === page;
+      return '<a class="radial-item' + (cur ? ' is-current' : '') + '" href="' + it.href + '" tabindex="-1"' + (cur ? ' aria-current="page"' : '') +
+        ' style="--i:' + i + '"><span class="ri"><span class="ic">' + it.icon + '</span></span><span class="rl">' + esc(it.label) + '</span></a>';
+    }).join('');
+    var curItem = data.filter(function (d) { return d.href.toLowerCase() === page; })[0];
+    nav.core.textContent = curItem ? curItem.label : 'Menu';
+    nav.ready = true;
+    placeRing();
+    nav.dock.classList.add('is-ready');
+  }
+
+  /** Lay the pages out on two concentric rings (inner ring first, clockwise from the top). */
+  function placeRing() {
+    var els = nav.items.children, n = els.length;
+    if (!n) return;
+    var outerR = Math.max(96, Math.min(150, window.innerWidth / 2 - 40));
+    var innerR = outerR * 0.58;
+    var inner = n <= 5 ? n : Math.round(n * 0.27), outer = n - inner;
+    nav.menu.querySelector('.r1').style.cssText = 'width:' + (innerR * 2) + 'px;height:' + (innerR * 2) + 'px;';
+    nav.menu.querySelector('.r2').style.cssText = 'width:' + (outerR * 2) + 'px;height:' + (outerR * 2) + 'px;';
+    for (var i = 0; i < n; i++) {
+      var ring = i < inner, k = ring ? i : i - inner, cnt = ring ? inner : outer, r = ring ? innerR : outerR;
+      var a = (k / cnt) * 2 * Math.PI - Math.PI / 2 + (ring ? 0 : Math.PI / cnt);   // outer ring is offset half a step
+      els[i].style.setProperty('--x', (Math.cos(a) * r).toFixed(1) + 'px');
+      els[i].style.setProperty('--y', (Math.sin(a) * r).toFixed(1) + 'px');
+    }
+  }
+
+  function initNav() {
+    buildNav();
+    if (!nav) return;
+    // Wait until the person's role is known so admin-only pages never flash up for staff.
+    document.addEventListener('edesk:authready', populateNav);
+    if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) populateNav();
+    else setTimeout(function () { if (!nav.ready) populateNav(); }, 2500);
   }
 
   var queued = false;
@@ -347,7 +452,7 @@ if ('serviceWorker' in navigator) {
 
   function init() {
     labelTables();
-    buildBottomNav();
+    initNav();
     new MutationObserver(queueLabel).observe(document.body, { childList: true, subtree: true });
   }
 
